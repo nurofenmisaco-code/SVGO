@@ -7,7 +7,7 @@ export default function SignUpPage() {
         routing="path"
         path="/sign-up"
         signInUrl="/sign-in"
-        forceRedirectUrl="/links"
+        redirectUrl="/links"
         appearance={{
           elements: {
             rootBox: "mx-auto",

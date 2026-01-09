@@ -76,6 +76,11 @@ export function LinkList({ initialLinks }: LinkListProps) {
   };
 
   const getShortUrl = (code: string) => {
+    // Use window.location for client-side, fallback to env var
+    if (typeof window !== 'undefined') {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+      return `${baseUrl}/${code}`;
+    }
     return `${process.env.NEXT_PUBLIC_APP_URL || 'https://svgo.to'}/${code}`;
   };
 
