@@ -1,0 +1,573 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                     String                   @id @default(cuid()) @map("id")
+  clerkId                String                   @unique
+  email                  String                   @unique @map("email")
+  username               String                   @unique
+  photo                  String
+  firstName              String?
+  lastName               String?
+  stripeCustomerId       String?
+  planId                 Int                      @default(1)
+  role                   UserRole                 @default(USER)
+  isActive               Boolean                  @default(true)
+  creditBalance          Int                      @default(10)
+  lowBalanceThreshold    Int                      @default(5)
+  autoTopUpEnabled       Boolean                  @default(false)
+  autoTopUpAmountCredits Int?
+  creditBalanceVersion   Int                      @default(0)
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime
+  entitlementLevel       String?
+  pendingPlanId          String?
+  credit_grants          credit_grants[]
+  credit_ledger          credit_ledger[]
+  import_logs            import_logs[]
+  job_quotes             job_quotes[]
+  jobs                   jobs[]
+  organization_members   organization_members[]
+  top_up_purchases       top_up_purchases[]
+  transactions           transactions[]
+  user_favorite_products user_favorite_products[]
+  user_subscriptions     UserSubscription[]
+  svgoLinks              SvgoLink[]
+
+  @@map("users")
+}
+
+model UserSubscription {
+  id                   String             @id @default(cuid()) @map("id")
+  userId               String
+  planId               String
+  stripeSubscriptionId String             @unique
+  status               SubscriptionStatus @default(ACTIVE) @map("status")
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean            @default(false)
+  canceledAt           DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime
+  credit_grants        credit_grants[]
+  subscription_plans   subscription_plans @relation(fields: [planId], references: [id])
+  users                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([stripeSubscriptionId])
+  @@index([userId, status])
+  @@map("user_subscriptions")
+}
+
+model amazon_product_raw_json {
+  id            String   @id
+  asin          String
+  source        String   @default("apify_actor")
+  schemaVersion String?
+  json          Json
+  status        String?  @default("pending")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime
+
+  @@index([asin])
+  @@index([createdAt])
+  @@index([schemaVersion])
+  @@index([source])
+  @@index([status])
+}
+
+model amazon_product_reviews {
+  id              String          @id
+  asin            String
+  rating          Float
+  starRating      Int
+  reviewer        String?
+  title           String?
+  body            String?
+  date            String?
+  verified        String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime
+  amazon_products amazon_products @relation(fields: [asin], references: [asin], onDelete: Cascade)
+
+  @@index([asin, rating])
+  @@index([asin, starRating])
+}
+
+model amazon_product_talking_points {
+  id                       String          @id
+  asin                     String
+  talkingPointsText        String
+  talkingPointsPromptUsed  String
+  talkingPointsGeneratedAt DateTime
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime
+  amazon_products          amazon_products @relation(fields: [asin], references: [asin], onDelete: Cascade)
+
+  @@index([asin])
+}
+
+model amazon_products {
+  asin                           String                          @id
+  canonicalUrl                   String?
+  title                          String?
+  brand                          String?
+  mainImageUrl                   String?
+  createdAt                      DateTime                        @default(now())
+  updatedAt                      DateTime
+  allImages                      Json?
+  averageRating                  Float?
+  bullets                        Json?
+  categoryPath                   Json?
+  customersUsuallyKeepPercentage Float?
+  customersUsuallyKeepRaw        String?
+  descriptionText                String?
+  locale                         String?
+  marketplace                    String?
+  priceDisplay                   String?
+  productUrl                     String?
+  relatedProducts                Json?
+  salePrice                      Float?
+  scrapedAt                      DateTime?
+  source                         String?                         @default("amazon")
+  totalRatings                   Int?
+  unitsSoldDisplay               String?
+  unitsSoldNumericEstimate       Int?
+  version                        String?
+  availabilityStatus             String?
+  availabilityText               String?
+  currency                       String?
+  hasCoupon                      Boolean?                        @default(false)
+  hasLimitedTimeDeal             Boolean?                        @default(false)
+  isAmazonChoice                 Boolean?                        @default(false)
+  isBestSeller                   Boolean?                        @default(false)
+  isPrime                        Boolean?                        @default(false)
+  listPrice                      Float?
+  longDescriptionHtml            String?
+  metaNotes                      String?
+  ratingScale                    Float?
+  rawHtmlIncluded                Boolean?                        @default(false)
+  shortDescription               String?
+  sourceActor                    String?
+  sourceIngestMethod             String?
+  sourceSubmittedBy              String?
+  sourceTimestamp                DateTime?
+  sourceType                     String?
+  videos                         Json?
+  amazon_product_reviews         amazon_product_reviews[]
+  amazon_product_talking_points  amazon_product_talking_points[]
+  product_amazon_matches         product_amazon_matches[]
+
+  @@index([locale, marketplace])
+  @@index([scrapedAt])
+  @@index([sourceType])
+}
+
+model auto_top_up_settings {
+  id               String       @id
+  triggerThreshold Int          @default(200)
+  topUpPlanId      String
+  isActive         Boolean      @default(true)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime
+  top_up_plans     top_up_plans @relation(fields: [topUpPlanId], references: [id])
+}
+
+model credit_balances {
+  id                     String        @id
+  organizationId         String        @unique
+  balance                Int           @default(0)
+  lowBalanceThreshold    Int           @default(10)
+  autoTopUpEnabled       Boolean       @default(false)
+  autoTopUpAmountCredits Int?
+  version                Int           @default(0)
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime
+  organizations          organizations @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model credit_grants {
+  id                 String            @id
+  userId             String
+  type               CreditType
+  amount             Int
+  usedAmount         Int               @default(0)
+  grantedAt          DateTime          @default(now())
+  expiresAt          DateTime
+  planId             String?
+  subscriptionId     String?
+  topUpPurchaseId    String?
+  ledgerId           String?
+  metadata           Json?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime
+  user_subscriptions UserSubscription? @relation(fields: [subscriptionId], references: [id])
+  top_up_purchases   top_up_purchases? @relation(fields: [topUpPurchaseId], references: [id])
+  users              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([userId, type, expiresAt])
+}
+
+model credit_ledger {
+  id             String        @id
+  organizationId String
+  userId         String?
+  jobId          String?
+  type           String
+  amount         Int
+  reason         String
+  metadata       Json?
+  idempotencyKey String?       @unique
+  externalJobId  String?
+  clientId       String?
+  environment    String        @default("production")
+  breakdown      Json?
+  balanceAfter   Int?
+  status         String        @default("completed")
+  createdAt      DateTime      @default(now())
+  organizations  organizations @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users          User?         @relation(fields: [userId], references: [id])
+}
+
+model import_logs {
+  id             String          @id
+  fileLabel      String
+  uploaderId     String?
+  status         ImportStatus    @default(PENDING)
+  rowsProcessed  Int             @default(0)
+  rowsCreated    Int             @default(0)
+  rowsUpdated    Int             @default(0)
+  rowsSkipped    Int             @default(0)
+  rowsFlagged    Int             @default(0)
+  notes          Json?
+  startedAt      DateTime        @default(now())
+  completedAt    DateTime?
+  reportId       String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime
+  weekly_reports weekly_reports? @relation(fields: [reportId], references: [id])
+  users          User?           @relation(fields: [uploaderId], references: [id])
+}
+
+model job_quotes {
+  id             String        @id
+  organizationId String
+  userId         String
+  workflowType   String
+  parameters     Json
+  totalCredits   Int
+  breakdown      Json
+  expiresAt      DateTime
+  status         String        @default("active")
+  createdAt      DateTime      @default(now())
+  organizations  organizations @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users          User          @relation(fields: [userId], references: [id])
+}
+
+model jobs {
+  id                     String        @id
+  organizationId         String
+  userId                 String
+  workflowId             String?
+  status                 String        @default("pending")
+  title                  String
+  description            String?
+  quotedCredits          Int?
+  quotedAt               DateTime?
+  confirmedAt            DateTime?
+  startedAt              DateTime?
+  completedAt            DateTime?
+  failedAt               DateTime?
+  totalInternalCostUsd   Float?
+  totalRetailCostCredits Int?
+  resultUrl              String?
+  errorMessage           String?
+  metadata               Json?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime
+  organizations          organizations @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users                  User          @relation(fields: [userId], references: [id])
+}
+
+model organization_members {
+  id             String        @id
+  organizationId String
+  userId         String
+  role           String        @default("member")
+  createdAt      DateTime      @default(now())
+  organizations  organizations @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+}
+
+model organizations {
+  id                   String                 @id
+  clerkId              String                 @unique
+  name                 String
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime
+  credit_balances      credit_balances?
+  credit_ledger        credit_ledger[]
+  job_quotes           job_quotes[]
+  jobs                 jobs[]
+  organization_members organization_members[]
+}
+
+model price_book {
+  id          String   @id
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+  pipelineKey String   @unique
+  creditCost  Int
+  active      Boolean  @default(true)
+}
+
+model product_amazon_matches {
+  id              String          @id
+  productId       String
+  asin            String
+  confidence      Float           @default(0.5)
+  source          String          @default("kalodata")
+  chosen          Boolean         @default(false)
+  matchedAt       DateTime        @default(now())
+  method          String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime
+  amazon_products amazon_products @relation(fields: [asin], references: [asin], onDelete: Cascade)
+  products        products        @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, asin])
+}
+
+model product_week_stats {
+  id                 String         @id
+  reportId           String
+  productId          String
+  rankThisWeek       Int?
+  tiktokSales7d      Int?
+  tiktokDailySales   Int?
+  amazonSales7d      Int?
+  snapshotPriceCents Int?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime
+  products           products       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  weekly_reports     weekly_reports @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, productId])
+}
+
+model products {
+  id                        String                   @id
+  tiktokProductId           String                   @unique
+  name                      String
+  tiktokProductUrl          String
+  displayImageUrl           String
+  createdAt                 DateTime                 @default(now())
+  updatedAt                 DateTime
+  tiktokProductImages       Json?
+  localImagePath            String?
+  localProductImages        Json?
+  amazon_asin               String?
+  amazon_link_notes         String?
+  amazon_link_review_status String                   @default("NOT_REVIEWED")
+  amazon_link_reviewed_at   DateTime?
+  amazon_link_reviewed_by   String?
+  amazon_link_source        String?
+  amazon_url                String?
+  amazon_url_raw            String?
+  product_amazon_matches    product_amazon_matches[]
+  product_week_stats        product_week_stats[]
+  user_favorite_products    user_favorite_products[]
+  videos                    videos[]
+
+  @@index([amazon_asin])
+}
+
+model subscription_plans {
+  id                    String             @id
+  planFamily            String
+  version               Int                @default(1)
+  internalId            String             @unique
+  publicName            String
+  priceUsd              Float
+  creditsPerCycle       Int
+  creditExpiryDays      Int                @default(30)
+  stripePriceId         String?            @unique
+  stripeProductId       String?
+  isActiveForNewSignups Boolean            @default(true)
+  isLegacyOnly          Boolean            @default(false)
+  isHidden              Boolean            @default(false)
+  isDefaultForSignup    Boolean            @default(false)
+  upgradeAllowedTo      String[]           @default([])
+  downgradeAllowedTo    String[]           @default([])
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime
+  user_subscriptions    UserSubscription[]
+
+  @@unique([planFamily, version])
+  @@index([planFamily, isActiveForNewSignups])
+}
+
+model top_up_plans {
+  id                             String                 @id
+  internalId                     String                 @unique
+  publicName                     String
+  priceUsd                       Float
+  creditsGranted                 Int
+  creditExpiryDays               Int                    @default(365)
+  stripePriceId                  String?                @unique
+  stripeProductId                String?
+  canPurchaseWithoutSubscription Boolean                @default(true)
+  isActive                       Boolean                @default(true)
+  isHidden                       Boolean                @default(false)
+  createdAt                      DateTime               @default(now())
+  updatedAt                      DateTime
+  auto_top_up_settings           auto_top_up_settings[]
+  top_up_purchases               top_up_purchases[]
+}
+
+model top_up_purchases {
+  id              String          @id
+  userId          String
+  planId          String
+  stripeSessionId String?
+  stripeInvoiceId String?
+  amount          Float
+  creditsGranted  Int
+  purchasedAt     DateTime        @default(now())
+  expiresAt       DateTime
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime
+  credit_grants   credit_grants[]
+  top_up_plans    top_up_plans    @relation(fields: [planId], references: [id])
+  users           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([stripeSessionId])
+  @@index([userId, expiresAt])
+}
+
+model transactions {
+  id        String   @id
+  userId    String
+  stripeId  String   @unique
+  amount    Float
+  plan      String?
+  credits   Int?
+  status    String   @default("completed")
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  users     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model user_favorite_products {
+  id        String   @id
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+  products  products @relation(fields: [productId], references: [id], onDelete: Cascade)
+  users     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([userId])
+}
+
+model videos {
+  id             String   @id
+  url            String   @unique
+  productId      String
+  rankForProduct Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime
+  thumbnailUrl   String?
+  products       products @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model weekly_reports {
+  id                 String               @id
+  weekStartDate      DateTime
+  weekEndDate        DateTime
+  label              String
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime
+  import_logs        import_logs[]
+  product_week_stats product_week_stats[]
+
+  @@unique([weekStartDate, weekEndDate])
+}
+
+enum CreditType {
+  SUBSCRIPTION
+  TOPUP
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  UNPAID
+  TRIALING
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+// SVGO Models - URL Shortener tables
+model SvgoLink {
+  id                      String   @id @default(cuid())
+  userId                  String
+  user                    User     @relation(fields: [userId], references: [id])
+  
+  code                    String   @unique // base62 short code (7-9 chars)
+  platform                String   // amazon, walmart, costco, homedepot, lowes, other
+  originalUrl             String   // user input
+  resolvedUrl             String   // final URL after redirects
+  fallbackUrl             String   // usually resolvedUrl
+  appDeeplinkUrl          String?  // nullable - app deep link
+  
+  merchantProductId       String?  // ASIN, SKU, itemId, etc.
+  merchantProductIdType   String?  // asin, sku, itemId
+  productSlug             String?  // parsed from URL path
+  label                   String?  // human-friendly name
+  tags                    String[] // auto-generated tags
+  
+  isActive                Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  
+  dailyClicks             SvgoDailyClick[]
+
+  @@index([userId])
+  @@index([code])
+  @@index([platform, merchantProductId])
+  @@index([userId, platform, merchantProductId]) // for deduplication
+  @@map("svgo_links")
+}
+
+model SvgoDailyClick {
+  id        String    @id @default(cuid())
+  linkId    String
+  link      SvgoLink  @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  date      DateTime  @db.Date
+  clicks    Int       @default(0)
+
+  @@unique([linkId, date])
+  @@index([linkId, date])
+  @@map("svgo_daily_clicks")
+}
