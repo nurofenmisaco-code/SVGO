@@ -48,8 +48,8 @@ export async function authenticateRequest(request: Request): Promise<AuthResult 
         
         if (userId && userId.startsWith('user_')) {
           // Verify user exists with Clerk
-          const clerk = await clerkClient();
-          const user = await clerk.users.getUser(userId);
+          // clerkClient is already the client object in Clerk v4, not a function
+          const user = await clerkClient.users.getUser(userId);
           
           if (user) {
             const email = user.emailAddresses[0]?.emailAddress;
