@@ -1,7 +1,7 @@
 import { authMiddleware } from "@clerk/nextjs";
 
 export default authMiddleware({
-  publicRoutes: ['/', '/[code]', '/sign-in', '/sign-up'], // Allow redirect handler and auth pages to be public
+  publicRoutes: ['/', '/[code]'], // Allow redirect handler to be public, API routes are protected
 });
 
 export const config = {

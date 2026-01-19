@@ -1,120 +1,69 @@
-# SVGO.to - URL Shortener
+# SVGO - Backend API Service
 
-A URL shortener service that converts affiliate links into short links that automatically open native shopping apps on mobile devices.
+A backend-only URL shortener service that provides API endpoints for creating and managing short links. The UI is implemented in the main SV project.
 
-## Features
+## 🎯 Purpose
 
-- 🔗 **Smart Redirects**: Automatically detects mobile devices and opens native apps when available
-- 📊 **Click Tracking**: Track daily clicks per link with detailed analytics
-- 🔍 **Link History**: Store and search your link history for easy retrieval
-- 🎯 **Deduplication**: Prevents duplicate links for the same product
-- 📱 **Mobile App Deep Linking**: Amazon links open in the native Amazon app
-- 🔐 **Shared Authentication**: Uses the same Clerk authentication as the main SV project
-- 💾 **Shared Database**: Uses the same PostgreSQL database as the main SV project
+This service provides:
+- URL shortening API endpoints
+- Mobile app deep linking (Amazon)
+- Daily click tracking
+- Link history and analytics
 
-## Tech Stack
+**Note:** This is a backend-only service. All UI is handled by the main SV project.
 
-- **Framework**: Next.js 14+ (App Router)
-- **Language**: TypeScript
-- **Database**: PostgreSQL (shared with main SV project)
-- **Authentication**: Clerk (shared with main SV project)
-- **Styling**: Tailwind CSS + Radix UI
-- **Validation**: Zod + React Hook Form
-- **State Management**: React Query (TanStack Query)
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+ and npm/yarn
-- PostgreSQL database (shared with main SV project)
-- Clerk account (shared with main SV project)
+## 🚀 Quick Start
 
 ### Installation
 
-1. Clone the repository and navigate to the project directory:
-```bash
-cd svgo
-```
-
-2. Install dependencies:
 ```bash
 npm install
 ```
 
-3. Copy environment variables from your main SV project:
-```bash
-cp ../sv/.env.local .env.local
-```
+### Environment Variables
 
-4. Update `.env.local` with SVGO-specific settings:
 ```bash
+# Database (shared with SV project)
+DATABASE_URL="postgresql://..."
+
+# Clerk (shared with SV project)
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_...
+CLERK_SECRET_KEY=sk_live_...
+
+# SVGO App URL (CRITICAL - must be SVGO deployment URL)
 NEXT_PUBLIC_APP_URL=https://svgo.to
 ```
 
-5. Set up the database:
+**Important:** `NEXT_PUBLIC_APP_URL` must be set to your SVGO deployment URL (e.g., `https://svgo.to`), NOT the SV project URL. This ensures short links point to the correct domain.
+
+### Database Setup
+
 ```bash
-# Push Prisma schema to database (adds new tables)
-npx prisma db push
+# Create SVGO tables
+npm run db:push
 
 # Generate Prisma Client
-npx prisma generate
+npm run db:generate
 ```
 
-6. Run the development server:
+### Development
+
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-## Environment Variables
-
-Copy these from your main SV project's `.env.local`:
-
-```bash
-# Database (shared)
-DATABASE_URL="postgresql://..."
-
-# Clerk (shared)
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
-CLERK_SECRET_KEY=sk_test_...
-
-# Clerk URLs
-NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
-NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
-NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/links
-NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/links
-
-# SVGO-specific
-NEXT_PUBLIC_APP_URL=https://svgo.to
-```
-
-## Database Schema
-
-The project adds two new tables to the shared database:
-
-- `svgo_links`: Stores short links and metadata
-- `svgo_daily_clicks`: Tracks daily click counts per link
-
-See `prisma/schema.prisma` for the full schema.
-
-## API Endpoints
+## 📡 API Endpoints
 
 ### Create Link
 **POST** `/api/svgo/create`
 
-Creates a new short link from an affiliate URL.
-
-**Request:**
 ```json
+// Request
 {
   "url": "https://amzn.to/4jwjE3Z"
 }
-```
 
-**Response:**
-```json
+// Response
 {
   "shortUrl": "https://svgo.to/abc1234",
   "platform": "amazon",
@@ -128,106 +77,72 @@ Creates a new short link from an affiliate URL.
 
 Returns all links for the authenticated user.
 
-### Get Click Analytics
+### Get Analytics
 **GET** `/api/svgo/:code/clicks?range=7|30`
 
 Returns click analytics for a specific link.
 
-**Query Parameters:**
-- `range`: Number of days (7 for free users, 30 for paid users)
+### Redirect Handler (Public)
+**GET** `/:code`
 
-**Response:**
-```json
-{
-  "code": "abc1234",
-  "totalClicks": 150,
-  "range": 7,
-  "dailyStats": [
-    { "date": "2026-01-03", "clicks": 25 },
-    { "date": "2026-01-02", "clicks": 20 }
-  ]
-}
+Handles short link redirects. No authentication required.
+
+See `API_DOCUMENTATION.md` for complete API documentation.
+
+## 🔧 Integration with SV Project
+
+The SV project calls these API endpoints to create and manage links. The short URLs point to this SVGO service's redirect handler.
+
+**Example:**
+```typescript
+// In SV project
+const response = await fetch('https://svgo.to/api/svgo/create', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include', // Include Clerk cookies
+  body: JSON.stringify({ url: 'https://amzn.to/4jwjE3Z' })
+});
 ```
 
-## Supported Platforms
+## 🗄️ Database
 
-- **Amazon**: Full support with app deep linking
-- **Walmart**: Web redirect only (app deep linking coming soon)
-- **Costco**: Web redirect only
-- **Home Depot**: Web redirect only
-- **Lowe's**: Web redirect only
-- **Other**: Generic web redirect
+SVGO adds two tables to the shared database:
+- `svgo_links` - Stores short links
+- `svgo_daily_clicks` - Tracks daily clicks
 
-## Project Structure
+## 🚢 Deployment
 
-```
-svgo/
-├── app/
-│   ├── (auth)/          # Authentication pages
-│   ├── (pages)/         # Main pages (create, links)
-│   ├── [code]/          # Redirect handler
-│   ├── api/             # API routes
-│   ├── layout.tsx       # Root layout
-│   └── page.tsx         # Home page
-├── components/
-│   ├── ui/              # Base UI components
-│   └── svgo/            # SVGO-specific components
-├── lib/
-│   ├── prisma.ts        # Prisma client
-│   ├── utils/
-│   │   └── svgo/        # SVGO utilities
-│   └── validators/      # Zod schemas
-└── prisma/
-    └── schema.prisma    # Database schema
-```
+### Vercel
 
-## Deployment
+1. Deploy to Vercel
+2. Set environment variables
+3. **Critical:** Set `NEXT_PUBLIC_APP_URL` to your Vercel deployment URL
+4. Run `npx prisma db push` to create tables
 
-### Digital Ocean App Platform
-
-1. Create a new App Platform project
-2. Connect your SVGO repository/folder
-3. Configure environment variables (copy from main SV project)
-4. Set custom domain: `svgo.to`
-5. Deploy
-
-### Post-Deployment
-
-1. Run Prisma migrations:
-```bash
-npx prisma db push
-```
-
-2. Test the following:
-   - Link creation (Amazon and Walmart)
-   - Mobile redirect behavior
-   - Click tracking
-   - Authentication (should work with existing SV users)
-
-## Development
-
-### Database Commands
+### Environment Variables for Production
 
 ```bash
-# Push schema changes
-npm run db:push
-
-# Generate Prisma Client
-npm run db:generate
-
-# Open Prisma Studio
-npm run db:studio
+NEXT_PUBLIC_APP_URL=https://svgo.to  # Your SVGO deployment URL
+DATABASE_URL=postgresql://...                    # Shared database
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_...    # Shared Clerk
+CLERK_SECRET_KEY=sk_live_...                      # Shared Clerk
 ```
 
-### Testing
+## ⚠️ Important: Short URL Generation
 
-Test URLs:
-- Amazon: `https://amzn.to/4jwjE3Z`
-- Walmart: `https://walmrt.us/492e4TB`
+The `shortUrl` in API responses uses `NEXT_PUBLIC_APP_URL`. 
 
-## License
+**Correct:**
+- `NEXT_PUBLIC_APP_URL=https://svgo.to`
+- Short URL: `https://svgo.to/abc1234`
 
-Private project - All rights reserved.
+**Wrong:**
+- `NEXT_PUBLIC_APP_URL=https://shoppablevideos.com`
+- Short URL: `https://shoppablevideos.com/abc1234` ❌
 
+Make sure `NEXT_PUBLIC_APP_URL` points to your SVGO deployment, not the SV project!
 
+## 📚 Documentation
 
+- **API Documentation:** See `API_DOCUMENTATION.md`
+- **Database Schema:** See `prisma/schema.prisma`
