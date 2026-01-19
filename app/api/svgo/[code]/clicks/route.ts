@@ -1,10 +1,10 @@
 // app/api/svgo/[code]/clicks/route.ts
 
-import { auth, currentUser } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { subDays, format } from 'date-fns';
 import { getOrCreateUser } from '@/lib/utils/user';
+import { authenticateRequest } from '@/lib/utils/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,18 +15,14 @@ export async function GET(
   try {
     const { code } = await params;
     
-    // Authenticate user
-    const { userId } = await auth();
-    if (!userId) {
+    // Authenticate user (supports both cookies and JWT token)
+    const authResult = await authenticateRequest(request);
+    if (!authResult) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get Clerk user for email
-    const clerkUser = await currentUser();
-    const email = clerkUser?.emailAddresses[0]?.emailAddress;
-
     // Get or create user from shared database
-    const user = await getOrCreateUser(userId, email);
+    const user = await getOrCreateUser(authResult.userId, authResult.email);
 
     if (!user) {
       return NextResponse.json({ 

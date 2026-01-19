@@ -1,6 +1,5 @@
 // app/api/svgo/create/route.ts
 
-import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { resolveUrl } from '@/lib/utils/svgo/url-resolver';
@@ -11,24 +10,20 @@ import { generateLabel, generateTags } from '@/lib/utils/svgo/label-generator';
 import { ensureUniqueCode } from '@/lib/utils/svgo/base62';
 import { createLinkSchema } from '@/lib/validators/svgo/create-link.schema';
 import { getOrCreateUser } from '@/lib/utils/user';
-import { currentUser } from '@clerk/nextjs/server';
+import { authenticateRequest } from '@/lib/utils/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
-    // Authenticate user
-    const { userId } = await auth();
-    if (!userId) {
+    // Authenticate user (supports both cookies and JWT token)
+    const authResult = await authenticateRequest(request);
+    if (!authResult) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get Clerk user for email
-    const clerkUser = await currentUser();
-    const email = clerkUser?.emailAddresses[0]?.emailAddress;
-
     // Get or create user from shared database
-    const user = await getOrCreateUser(userId, email);
+    const user = await getOrCreateUser(authResult.userId, authResult.email);
 
     if (!user) {
       return NextResponse.json({ 

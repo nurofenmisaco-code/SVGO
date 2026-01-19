@@ -1,7 +1,9 @@
 import { authMiddleware } from "@clerk/nextjs";
 
 export default authMiddleware({
-  publicRoutes: ['/', '/[code]'], // Allow redirect handler to be public, API routes are protected
+  // Make API routes public - authentication is handled inside each API route
+  // This allows both cookie-based and JWT token-based authentication
+  publicRoutes: ['/', '/[code]', '/api/svgo/create', '/api/svgo/links', '/api/svgo/(.*)'],
 });
 
 export const config = {
