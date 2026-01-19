@@ -1,6 +1,7 @@
 // app/api/svgo/create/route.ts
 
 import { NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { resolveUrl } from '@/lib/utils/svgo/url-resolver';
 import { detectPlatform } from '@/lib/utils/svgo/platform-detector';
@@ -16,20 +17,36 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
+    // Log all headers for debugging
+    const headersList = await headers();
+    const allHeaders: Record<string, string> = {};
+    headersList.forEach((value, key) => {
+      allHeaders[key] = key.toLowerCase() === 'authorization' ? 'Bearer ***' : value;
+    });
+    console.log('[SVGO Create] All headers:', Object.keys(allHeaders));
+    console.log('[SVGO Create] Has Authorization header:', headersList.has('authorization'));
+    
+    // Try both request.headers and Next.js headers()
+    const authHeaderFromRequest = request.headers.get('Authorization') || request.headers.get('authorization');
+    const authHeaderFromHeaders = headersList.get('authorization') || headersList.get('Authorization');
+    const authHeader = authHeaderFromRequest || authHeaderFromHeaders;
+    
+    console.log('[SVGO Create] Auth header from request:', authHeaderFromRequest ? 'present' : 'missing');
+    console.log('[SVGO Create] Auth header from headers():', authHeaderFromHeaders ? 'present' : 'missing');
+    
     // Authenticate user (supports both cookies and JWT token)
     const authResult = await authenticateRequest(request);
     if (!authResult) {
       // Return detailed error for debugging
-      const authHeader = request.headers.get('Authorization');
-      const hasAuthHeader = !!authHeader && authHeader.startsWith('Bearer ');
-      const tokenLength = authHeader ? authHeader.length : 0;
-      
       return NextResponse.json({ 
         error: 'Unauthorized',
         debug: {
-          hasAuthHeader,
-          tokenLength: hasAuthHeader ? tokenLength - 7 : 0, // Subtract 'Bearer ' prefix
-          authHeaderPrefix: authHeader?.substring(0, 20) || 'none'
+          hasAuthHeader: !!authHeader,
+          authHeaderFromRequest: !!authHeaderFromRequest,
+          authHeaderFromHeaders: !!authHeaderFromHeaders,
+          tokenLength: authHeader ? authHeader.length : 0,
+          authHeaderPrefix: authHeader?.substring(0, 20) || 'none',
+          allHeaderKeys: Object.keys(allHeaders)
         }
       }, { status: 401 });
     }

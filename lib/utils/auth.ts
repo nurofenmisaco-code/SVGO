@@ -29,7 +29,19 @@ export async function authenticateRequest(request: Request): Promise<AuthResult 
   }
 
   // If no cookie auth, try JWT token from Authorization header (server-to-server)
-  const authHeader = request.headers.get('Authorization');
+  // Try both capitalized and lowercase versions (headers can be case-insensitive)
+  let authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
+  
+  // Also try using Next.js headers() function
+  if (!authHeader) {
+    try {
+      const { headers: nextHeaders } = await import('next/headers');
+      const headersList = await nextHeaders();
+      authHeader = headersList.get('authorization') || headersList.get('Authorization');
+    } catch (e) {
+      // Ignore if headers() fails
+    }
+  }
   
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7); // Remove 'Bearer ' prefix
