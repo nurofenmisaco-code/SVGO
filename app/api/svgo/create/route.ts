@@ -1,7 +1,6 @@
 // app/api/svgo/create/route.ts
 
 import { NextResponse } from 'next/server';
-import { headers } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { resolveUrl } from '@/lib/utils/svgo/url-resolver';
 import { detectPlatform } from '@/lib/utils/svgo/platform-detector';
@@ -17,22 +16,11 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
-    // Log all headers for debugging
-    const headersList = await headers();
-    const allHeaders: Record<string, string> = {};
-    headersList.forEach((value, key) => {
-      allHeaders[key] = key.toLowerCase() === 'authorization' ? 'Bearer ***' : value;
-    });
-    console.log('[SVGO Create] All headers:', Object.keys(allHeaders));
-    console.log('[SVGO Create] Has Authorization header:', headersList.has('authorization'));
-    
-    // Try both request.headers and Next.js headers()
+    // Try to get auth header from request headers first (most reliable for API routes)
     const authHeaderFromRequest = request.headers.get('Authorization') || request.headers.get('authorization');
-    const authHeaderFromHeaders = headersList.get('authorization') || headersList.get('Authorization');
-    const authHeader = authHeaderFromRequest || authHeaderFromHeaders;
     
+    // Log for debugging
     console.log('[SVGO Create] Auth header from request:', authHeaderFromRequest ? 'present' : 'missing');
-    console.log('[SVGO Create] Auth header from headers():', authHeaderFromHeaders ? 'present' : 'missing');
     
     // Authenticate user (supports both cookies and JWT token)
     const authResult = await authenticateRequest(request);
@@ -41,12 +29,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ 
         error: 'Unauthorized',
         debug: {
-          hasAuthHeader: !!authHeader,
+          hasAuthHeader: !!authHeaderFromRequest,
           authHeaderFromRequest: !!authHeaderFromRequest,
-          authHeaderFromHeaders: !!authHeaderFromHeaders,
-          tokenLength: authHeader ? authHeader.length : 0,
-          authHeaderPrefix: authHeader?.substring(0, 20) || 'none',
-          allHeaderKeys: Object.keys(allHeaders)
+          tokenLength: authHeaderFromRequest ? authHeaderFromRequest.length : 0,
+          authHeaderPrefix: authHeaderFromRequest?.substring(0, 20) || 'none',
         }
       }, { status: 401 });
     }
@@ -137,19 +123,35 @@ export async function POST(request: Request) {
       code: link.code,
     });
   } catch (error) {
-    console.error('Error creating link:', error);
+    console.error('[SVGO Create] Error creating link:', error);
     
     if (error instanceof Error) {
+      console.error('[SVGO Create] Error message:', error.message);
+      console.error('[SVGO Create] Error stack:', error.stack);
+      
       if (error.message.includes('zod')) {
         return NextResponse.json(
           { error: 'Invalid URL format' },
           { status: 400 }
         );
       }
+      
+      // Return detailed error for debugging
+      return NextResponse.json(
+        { 
+          error: 'Failed to create link',
+          message: error.message,
+          name: error.name,
+        },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json(
-      { error: 'Failed to create link' },
+      { 
+        error: 'Failed to create link',
+        message: 'Unknown error',
+      },
       { status: 500 }
     );
   }

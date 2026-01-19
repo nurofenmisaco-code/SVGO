@@ -44,9 +44,28 @@ export async function GET(request: Request) {
 
     return NextResponse.json(links);
   } catch (error) {
-    console.error('Error fetching links:', error);
+    console.error('[SVGO Links] Error fetching links:', error);
+    
+    if (error instanceof Error) {
+      console.error('[SVGO Links] Error message:', error.message);
+      console.error('[SVGO Links] Error stack:', error.stack);
+      
+      // Return detailed error for debugging
+      return NextResponse.json(
+        { 
+          error: 'Failed to fetch links',
+          message: error.message,
+          name: error.name,
+        },
+        { status: 500 }
+      );
+    }
+    
     return NextResponse.json(
-      { error: 'Failed to fetch links' },
+      { 
+        error: 'Failed to fetch links',
+        message: 'Unknown error',
+      },
       { status: 500 }
     );
   }
