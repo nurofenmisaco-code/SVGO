@@ -1,16 +1,28 @@
 import { authMiddleware } from "@clerk/nextjs";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-export default authMiddleware({
-  // Make API routes public - authentication is handled inside each API route
-  // This allows both cookie-based and JWT token-based authentication
-  // Clerk middleware needs to run (for auth() to work) but routes are public (headers preserved)
+// Create Clerk middleware instance  
+const clerkAuth = authMiddleware({
   publicRoutes: ['/', '/[code]', '/api/svgo/create', '/api/svgo/links', '/api/svgo/(.*)'],
 });
 
+// Custom middleware that preserves Authorization headers for API routes
+export default function middleware(req: NextRequest, event?: any) {
+  // For API routes, skip Clerk middleware entirely to preserve Authorization header
+  // We handle authentication manually in the API routes using JWT tokens
+  if (req.nextUrl.pathname.startsWith('/api/svgo/')) {
+    // Just pass through - don't process with Clerk
+    // This preserves all headers including Authorization
+    return NextResponse.next();
+  }
+
+  // For other routes, use Clerk middleware
+  return clerkAuth(req, event);
+}
+
 export const config = {
-  // Include API routes in matcher so Clerk can detect authMiddleware()
-  // But mark them as publicRoutes above so they don't require cookie auth
-  // This preserves Authorization headers while allowing auth() to work
+  // Include API routes in matcher but handle them separately above
   matcher: ["/((?!.+\\.[\\w]+$|_next).*)", "/", "/(api|trpc)(.*)"],
 };
 
