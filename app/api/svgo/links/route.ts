@@ -9,10 +9,21 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   try {
+    // Log for debugging
+    const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
+    console.log('[SVGO Links] Auth header present:', !!authHeader);
+    
     // Authenticate user (supports both cookies and JWT token)
     const authResult = await authenticateRequest(request);
     if (!authResult) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      // Return detailed error for debugging
+      return NextResponse.json({ 
+        error: 'Unauthorized',
+        debug: {
+          hasAuthHeader: !!authHeader,
+          authHeaderPrefix: authHeader?.substring(0, 20) || 'none',
+        }
+      }, { status: 401 });
     }
 
     // Get or create user from shared database
