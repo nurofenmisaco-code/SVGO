@@ -19,7 +19,19 @@ export async function POST(request: Request) {
     // Authenticate user (supports both cookies and JWT token)
     const authResult = await authenticateRequest(request);
     if (!authResult) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      // Return detailed error for debugging
+      const authHeader = request.headers.get('Authorization');
+      const hasAuthHeader = !!authHeader && authHeader.startsWith('Bearer ');
+      const tokenLength = authHeader ? authHeader.length : 0;
+      
+      return NextResponse.json({ 
+        error: 'Unauthorized',
+        debug: {
+          hasAuthHeader,
+          tokenLength: hasAuthHeader ? tokenLength - 7 : 0, // Subtract 'Bearer ' prefix
+          authHeaderPrefix: authHeader?.substring(0, 20) || 'none'
+        }
+      }, { status: 401 });
     }
 
     // Get or create user from shared database
