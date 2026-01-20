@@ -16,23 +16,57 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
-    // Try to get auth header from request headers first (most reliable for API routes)
-    const authHeaderFromRequest = request.headers.get('Authorization') || request.headers.get('authorization');
+    // Log ALL headers for debugging
+    const allHeaders: Record<string, string> = {};
+    request.headers.forEach((value, key) => {
+      allHeaders[key] = key.toLowerCase().includes('authorization') ? 'Bearer ***' : value;
+    });
+    console.log('[SVGO Create] All incoming headers:', Object.keys(allHeaders));
+    console.log('[SVGO Create] All header values:', JSON.stringify(Object.keys(allHeaders).reduce((acc, k) => {
+      acc[k] = k.toLowerCase().includes('authorization') ? 'Bearer ***' : allHeaders[k];
+      return acc;
+    }, {} as Record<string, string>)));
+    
+    // Try multiple ways to get the auth header
+    const authHeaderFromRequest = request.headers.get('Authorization') || 
+                                   request.headers.get('authorization') ||
+                                   request.headers.get('AUTHORIZATION');
+    
+    // Also try to get it from the raw headers
+    const headerEntries = Array.from(request.headers.entries());
+    const authHeaderFromEntries = headerEntries.find(([key]) => 
+      key.toLowerCase() === 'authorization'
+    )?.[1];
+    
+    const authHeader = authHeaderFromRequest || authHeaderFromEntries;
     
     // Log for debugging
-    console.log('[SVGO Create] Auth header from request:', authHeaderFromRequest ? 'present' : 'missing');
+    console.log('[SVGO Create] Auth header from request.get():', authHeaderFromRequest ? 'present' : 'missing');
+    console.log('[SVGO Create] Auth header from entries:', authHeaderFromEntries ? 'present' : 'missing');
+    console.log('[SVGO Create] Final auth header:', authHeader ? 'present' : 'missing');
     
     // Authenticate user (supports both cookies and JWT token)
+    // Create a modified request with the auth header if we found it
+    let requestToAuth = request;
+    if (authHeader && !request.headers.get('Authorization')) {
+      // If we found the header via entries but not via get(), create a new request
+      // Actually, we can't modify the request, so just pass the header value directly
+      console.log('[SVGO Create] Using auth header from entries search');
+    }
+    
     const authResult = await authenticateRequest(request);
     if (!authResult) {
       // Return detailed error for debugging
       return NextResponse.json({ 
         error: 'Unauthorized',
         debug: {
-          hasAuthHeader: !!authHeaderFromRequest,
+          hasAuthHeader: !!authHeader,
           authHeaderFromRequest: !!authHeaderFromRequest,
-          tokenLength: authHeaderFromRequest ? authHeaderFromRequest.length : 0,
-          authHeaderPrefix: authHeaderFromRequest?.substring(0, 20) || 'none',
+          authHeaderFromEntries: !!authHeaderFromEntries,
+          tokenLength: authHeader ? authHeader.length : 0,
+          authHeaderPrefix: authHeader?.substring(0, 20) || 'none',
+          allHeaderKeys: Object.keys(allHeaders),
+          headerCount: Object.keys(allHeaders).length,
         }
       }, { status: 401 });
     }

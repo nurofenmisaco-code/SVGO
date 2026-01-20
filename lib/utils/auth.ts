@@ -17,7 +17,29 @@ export interface AuthResult {
 export async function authenticateRequest(request: Request): Promise<AuthResult | null> {
   // First, check for JWT token in Authorization header (server-to-server)
   // This avoids calling auth() if we have a token, preventing Clerk middleware issues
-  let authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
+  
+  // Try multiple ways to get the auth header
+  let authHeader = request.headers.get('Authorization') || 
+                   request.headers.get('authorization') ||
+                   request.headers.get('AUTHORIZATION');
+  
+  // Also try custom header as fallback (in case Authorization is being stripped)
+  if (!authHeader) {
+    authHeader = request.headers.get('X-Authorization') || 
+                 request.headers.get('x-authorization');
+  }
+  
+  // Also check via header entries (in case get() doesn't work)
+  if (!authHeader) {
+    const headerEntries = Array.from(request.headers.entries());
+    const foundEntry = headerEntries.find(([key]) => 
+      key.toLowerCase() === 'authorization' || key.toLowerCase() === 'x-authorization'
+    );
+    if (foundEntry) {
+      authHeader = foundEntry[1];
+      console.log('[SVGO Auth] Found auth header via entries search');
+    }
+  }
   
   if (authHeader && authHeader.startsWith('Bearer ')) {
     // We have a JWT token, process it directly without calling auth()
