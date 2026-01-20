@@ -1,19 +1,35 @@
 import { authMiddleware } from "@clerk/nextjs";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-export default authMiddleware({
-  // Make API routes public - authentication is handled inside each API route
-  publicRoutes: ['/', '/[code]', '/api/svgo/create', '/api/svgo/links', '/api/svgo/(.*)'],
+const clerkAuth = authMiddleware({
+  publicRoutes: ['/'],
 });
 
+export default function middleware(req: NextRequest, event?: any) {
+  // Allow short link redirects (any path that's not /api, /_next, or root) to be public
+  // This makes /{code} routes public without authentication
+  const pathname = req.nextUrl.pathname;
+  
+  // Public routes: root, short links (any non-API, non-_next path), and API routes
+  const isPublicRoute = 
+    pathname === '/' ||
+    pathname.startsWith('/api/') ||
+    (!pathname.startsWith('/_next') && !pathname.startsWith('/api'));
+  
+  if (isPublicRoute) {
+    // For public routes, just pass through without Clerk authentication
+    return NextResponse.next();
+  }
+  
+  // For other routes, use Clerk middleware
+  return clerkAuth(req, event);
+}
+
 export const config = {
-  // Exclude API routes from middleware entirely to preserve Authorization headers
-  // This ensures headers are never touched by middleware
   matcher: [
-    // Skip all static files, API routes, and _next
-    "/((?!_next/static|_next/image|favicon.ico|api/).*)",
-    // But include root and dynamic routes
-    "/",
-    "/[code]"
+    // Match all routes except static files
+    "/((?!_next/static|_next/image|favicon.ico).*)",
   ],
 };
 
