@@ -9,6 +9,14 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   try {
+    // Log ALL headers for debugging
+    const allHeaders: Record<string, string> = {};
+    request.headers.forEach((value, key) => {
+      allHeaders[key] = key.toLowerCase().includes('authorization') ? 'Bearer ***' : value;
+    });
+    console.log('[SVGO Links] All incoming headers:', Object.keys(allHeaders));
+    console.log('[SVGO Links] Header count:', Object.keys(allHeaders).length);
+    
     // Log for debugging
     const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
     console.log('[SVGO Links] Auth header present:', !!authHeader);
