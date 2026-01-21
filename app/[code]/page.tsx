@@ -60,21 +60,30 @@ export default async function RedirectPage({ params }: PageProps) {
   const userAgent = headersList.get('user-agent');
   const mobile = isMobile(userAgent);
 
-  // Desktop: immediate redirect
-  if (!mobile) {
+  // Check if this is a Walmart URL - they block server-side redirects
+  const isWalmart = link.fallbackUrl.includes('walmart.com') || 
+                    link.originalUrl.includes('walmart.com') ||
+                    link.platform === 'walmart';
+
+  // For Walmart URLs, always use JavaScript redirect (client-side) to avoid blocking
+  // For other platforms on desktop, use server-side redirect for speed
+  if (!mobile && !isWalmart) {
     redirect(link.fallbackUrl);
   }
 
-  // Mobile: show smart redirect page
+  // Mobile or Walmart: show JavaScript redirect page
   const appDeeplinkUrl = link.appDeeplinkUrl || link.fallbackUrl;
   const fallbackUrl = link.fallbackUrl;
+
+  // For Walmart, redirect immediately without app deep link attempt
+  const shouldRedirectImmediately = isWalmart && !mobile;
 
   return (
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Opening...</title>
+        <title>Redirecting...</title>
         <style dangerouslySetInnerHTML={{
           __html: `
             * {
@@ -177,11 +186,26 @@ export default async function RedirectPage({ params }: PageProps) {
             (function() {
               const appDeeplinkUrl = ${JSON.stringify(appDeeplinkUrl)};
               const fallbackUrl = ${JSON.stringify(fallbackUrl)};
+              const isWalmart = ${JSON.stringify(isWalmart)};
+              const isMobile = ${JSON.stringify(mobile)};
               
-              // Attempt app deep link immediately
-              window.location.href = appDeeplinkUrl;
+              // For Walmart (especially desktop), redirect immediately to avoid blocking
+              if (isWalmart && !isMobile) {
+                window.location.replace(fallbackUrl);
+                return;
+              }
               
-              // Set up button handlers
+              // For mobile or non-Walmart, attempt app deep link first
+              if (isMobile && appDeeplinkUrl && appDeeplinkUrl !== fallbackUrl) {
+                // Try app deep link first
+                window.location.href = appDeeplinkUrl;
+              } else {
+                // No app deep link, redirect to fallback
+                window.location.replace(fallbackUrl);
+                return;
+              }
+              
+              // Set up button handlers (only shown if app deep link attempt fails)
               document.getElementById('openAppBtn').addEventListener('click', function() {
                 window.location.href = appDeeplinkUrl;
               });
@@ -190,11 +214,13 @@ export default async function RedirectPage({ params }: PageProps) {
                 window.location.href = fallbackUrl;
               });
               
-              // Show buttons after 1 second
-              setTimeout(() => {
-                document.getElementById('buttons').classList.add('visible');
-                document.querySelector('.loading').style.opacity = '0.5';
-              }, 1000);
+              // Show buttons after 1 second (only for mobile with app deep links)
+              if (isMobile && appDeeplinkUrl && appDeeplinkUrl !== fallbackUrl) {
+                setTimeout(() => {
+                  document.getElementById('buttons').classList.add('visible');
+                  document.querySelector('.loading').style.opacity = '0.5';
+                }, 1000);
+              }
             })();
           `
         }} />

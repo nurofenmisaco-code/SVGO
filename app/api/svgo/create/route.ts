@@ -131,6 +131,9 @@ export async function POST(request: Request) {
     const code = await ensureUniqueCode(prisma);
 
     // Step 8: Create link in database
+    // For Walmart, use original URL as fallback to avoid any processing issues
+    const fallbackUrl = platform === 'walmart' ? url : resolvedUrl;
+    
     const link = await prisma.svgoLink.create({
       data: {
         userId: user.id,
@@ -138,7 +141,7 @@ export async function POST(request: Request) {
         platform,
         originalUrl: url,
         resolvedUrl,
-        fallbackUrl: resolvedUrl,
+        fallbackUrl,
         appDeeplinkUrl,
         merchantProductId: productInfo.merchantProductId,
         merchantProductIdType: productInfo.merchantProductIdType,
