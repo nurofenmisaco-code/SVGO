@@ -9,7 +9,7 @@
       "headers": [
         {
           "key": "Access-Control-Allow-Headers",
-          "value": "Authorization, X-Authorization, Content-Type"
+          "value": "Authorization, X-Authorization, X-API-Key, X-User-Id, Content-Type"
         }
       ]
     }

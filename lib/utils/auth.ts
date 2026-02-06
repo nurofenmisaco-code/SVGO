@@ -1,5 +1,5 @@
 // lib/utils/auth.ts
-// Helper to authenticate users via Clerk cookies OR JWT token in Authorization header
+// Helper to authenticate users via Clerk cookies OR JWT token OR API key (server-to-server)
 
 import { auth, clerkClient } from '@clerk/nextjs/server';
 import { currentUser } from '@clerk/nextjs/server';
@@ -9,15 +9,26 @@ export interface AuthResult {
   email?: string;
 }
 
+const SVGO_API_SECRET = process.env.SVGO_API_SECRET;
+
 /**
  * Authenticates a user using either:
- * 1. Clerk session cookies (for browser requests)
- * 2. JWT token in Authorization header (for server-to-server requests)
+ * 1. API key + X-User-Id header (server-to-server, most reliable when both projects share env)
+ * 2. JWT token in Authorization header (server-to-server)
+ * 3. Clerk session cookies (for browser requests)
  */
 export async function authenticateRequest(request: Request): Promise<AuthResult | null> {
-  // First, check for JWT token in Authorization header (server-to-server)
-  // This avoids calling auth() if we have a token, preventing Clerk middleware issues
-  
+  // 1. API key auth (server-to-server fallback - use when Imaginify and SVGO share same env)
+  if (SVGO_API_SECRET) {
+    const apiKey = request.headers.get('X-API-Key') || request.headers.get('x-api-key');
+    const userId = request.headers.get('X-User-Id') || request.headers.get('x-user-id');
+    if (apiKey === SVGO_API_SECRET && userId && userId.startsWith('user_')) {
+      console.log('[SVGO Auth] Authenticated via API key for userId:', userId);
+      return { userId };
+    }
+  }
+
+  // 2. JWT token in Authorization header
   // Try multiple ways to get the auth header
   let authHeader = request.headers.get('Authorization') || 
                    request.headers.get('authorization') ||
