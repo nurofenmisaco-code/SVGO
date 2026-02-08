@@ -548,9 +548,10 @@ model SvgoLink {
   tags                    String[] // auto-generated tags
   
   isActive                Boolean  @default(true)
+  totalClicks             Int      @default(0) // Denormalized for fast display (100k+ links)
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
-  
+
   dailyClicks             SvgoDailyClick[]
 
   @@index([userId])

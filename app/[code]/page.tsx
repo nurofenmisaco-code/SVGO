@@ -6,40 +6,47 @@ import { headers } from 'next/headers';
 import { startOfDay } from 'date-fns';
 
 interface PageProps {
-  params: { code: string };
+  params: Promise<{ code: string }>;
 }
 
 function isMobile(userAgent: string | null): boolean {
   if (!userAgent) return false;
-  
   const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
   return mobileRegex.test(userAgent);
 }
 
+/** Detect in-app browser (TikTok, Instagram, etc.) - app deep links rarely work in WebViews */
+function isInAppBrowser(userAgent: string | null): boolean {
+  if (!userAgent) return false;
+  const ua = userAgent.toLowerCase();
+  return (
+    ua.includes('musical_ly') ||
+    ua.includes('tiktok') ||
+    ua.includes('bytedancewebview') ||
+    ua.includes('instagram') ||
+    ua.includes('fbav') ||
+    ua.includes('fbiossdk') ||
+    ua.includes('fbios') ||
+    ua.includes('line/')
+  );
+}
+
 async function trackClick(linkId: string) {
   const today = startOfDay(new Date());
-  
-  // Find or create today's click record
-  const dailyClick = await prisma.svgoDailyClick.upsert({
-    where: {
-      linkId_date: {
-        linkId,
-        date: today,
+
+  await prisma.$transaction([
+    prisma.svgoDailyClick.upsert({
+      where: {
+        linkId_date: { linkId, date: today },
       },
-    },
-    update: {
-      clicks: {
-        increment: 1,
-      },
-    },
-    create: {
-      linkId,
-      date: today,
-      clicks: 1,
-    },
-  });
-  
-  return dailyClick;
+      update: { clicks: { increment: 1 } },
+      create: { linkId, date: today, clicks: 1 },
+    }),
+    prisma.svgoLink.update({
+      where: { id: linkId },
+      data: { totalClicks: { increment: 1 } },
+    }),
+  ]);
 }
 
 export default async function RedirectPage({ params }: PageProps) {
@@ -93,10 +100,34 @@ export default async function RedirectPage({ params }: PageProps) {
     );
   }
 
-  // Mobile: show app deep link page (only for mobile with potential app deep links)
   const appDeeplinkUrl = link.appDeeplinkUrl || link.fallbackUrl;
   const fallbackUrl = link.fallbackUrl;
   const hasAppDeepLink = link.appDeeplinkUrl && link.appDeeplinkUrl !== link.fallbackUrl;
+  const inAppBrowser = isInAppBrowser(userAgent);
+
+  // In-app browser (TikTok, Instagram, etc.): WebViews block app deep links. Skip our "Open in App"
+  // page - redirect straight to product URL. Amazon's mobile page may open app or show Open in App.
+  if (mobile && inAppBrowser) {
+    return (
+      <html lang="en">
+        <head>
+          <meta charSet="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>Redirecting...</title>
+          <meta httpEquiv="refresh" content={`0;url=${fallbackUrl}`} />
+        </head>
+        <body>
+          <script dangerouslySetInnerHTML={{
+            __html: `window.location.replace(${JSON.stringify(fallbackUrl)});`
+          }} />
+          <noscript>
+            <meta httpEquiv="refresh" content={`0;url=${fallbackUrl}`} />
+            <p>Redirecting... <a href={fallbackUrl}>Tap here</a></p>
+          </noscript>
+        </body>
+      </html>
+    );
+  }
 
   // If mobile but no app deep link, just redirect immediately
   if (mobile && !hasAppDeepLink) {
@@ -245,8 +276,10 @@ export default async function RedirectPage({ params }: PageProps) {
               
               // Show buttons after 1 second
               setTimeout(() => {
-                document.getElementById('buttons').classList.add('visible');
-                document.querySelector('.loading').style.opacity = '0.5';
+                var btn = document.getElementById('buttons');
+                var load = document.querySelector('.loading');
+                if (btn) btn.classList.add('visible');
+                if (load && load instanceof HTMLElement) load.style.opacity = '0.5';
               }, 1000);
             })();
           `

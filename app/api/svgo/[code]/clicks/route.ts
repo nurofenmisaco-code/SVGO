@@ -2,7 +2,7 @@
 
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { subDays, format } from 'date-fns';
+import { subDays, format, startOfDay, isSameDay } from 'date-fns';
 import { getOrCreateUser } from '@/lib/utils/user';
 import { authenticateRequest } from '@/lib/utils/auth';
 
@@ -41,23 +41,27 @@ export async function GET(
     const isPaid = !!userSubscription;
     const maxDays = isPaid ? 30 : 7;
 
-    // Get range from query params (default to maxDays)
+    // Get range from query params: 7 or 30 (default 7)
     const { searchParams } = new URL(request.url);
     const rangeParam = searchParams.get('range');
-    const range = rangeParam ? Math.min(parseInt(rangeParam, 10), maxDays) : maxDays;
+    const range = rangeParam === '30' ? Math.min(30, maxDays) : Math.min(7, maxDays);
 
-    // Find link by code
+    const today = startOfDay(new Date());
+    // Graph: last N days EXCLUDING today
+    const graphStartDate = subDays(today, range);
+
+    // Find link by code - fetch extra to get today's clicks
     const link = await prisma.svgoLink.findUnique({
       where: { code },
       include: {
         dailyClicks: {
           where: {
             date: {
-              gte: subDays(new Date(), range),
+              gte: graphStartDate,
             },
           },
           orderBy: {
-            date: 'desc',
+            date: 'asc',
           },
         },
       },
@@ -72,20 +76,26 @@ export async function GET(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Calculate total clicks
-    const totalClicks = link.dailyClicks.reduce((sum, dc) => sum + dc.clicks, 0);
+    // Separate today's clicks from graph data
+    const todayRecord = link.dailyClicks.find((dc) => isSameDay(dc.date, today));
+    const todayClicks = todayRecord?.clicks ?? 0;
 
-    // Format daily stats
-    const dailyStats = link.dailyClicks.map((dc) => ({
+    const graphData = link.dailyClicks.filter((dc) => !isSameDay(dc.date, today));
+    const totalClicksGraph = graphData.reduce((sum, dc) => sum + dc.clicks, 0);
+
+    // Format daily stats for graph (excluding today)
+    const dailyStats = graphData.map((dc) => ({
       date: format(dc.date, 'yyyy-MM-dd'),
+      dateLabel: format(dc.date, 'MMM d'),
       clicks: dc.clicks,
     }));
 
     return NextResponse.json({
       code,
-      totalClicks,
+      totalClicks: totalClicksGraph + todayClicks,
       range,
       dailyStats,
+      todayClicks,
     });
   } catch (error) {
     console.error('Error fetching clicks:', error);
