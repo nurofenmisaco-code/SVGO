@@ -1,6 +1,7 @@
 // app/[code]/page.tsx - Redirect handler with mobile app deep linking
 
 import { prisma } from '@/lib/prisma';
+import type { Prisma } from '@prisma/client';
 import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { startOfDay } from 'date-fns';
@@ -44,7 +45,7 @@ async function trackClick(linkId: string) {
     }),
     prisma.svgoLink.update({
       where: { id: linkId },
-      data: { totalClicks: { increment: 1 } },
+      data: { totalClicks: { increment: 1 } } as Prisma.SvgoLinkUpdateInput,
     }),
   ]);
 }
