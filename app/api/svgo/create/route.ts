@@ -82,7 +82,7 @@ export async function POST(request: Request) {
 
     // Parse and validate request body
     const body = await request.json();
-    const { url } = createLinkSchema.parse(body);
+    const { url, forceNew } = createLinkSchema.parse(body);
 
     // Step 1: Resolve URL (follow redirects)
     const resolvedUrl = await resolveUrl(url);
@@ -93,8 +93,8 @@ export async function POST(request: Request) {
     // Step 3: Extract product information
     const productInfo = extractProductInfo(resolvedUrl, platform);
 
-    // Step 4: Check for existing link (deduplication)
-    if (productInfo.merchantProductId) {
+    // Step 4: Check for existing link (deduplication) - skip when forceNew (e.g. Link-in-Bio needs separate link per post)
+    if (productInfo.merchantProductId && !forceNew) {
       const existingLink = await prisma.svgoLink.findFirst({
         where: {
           userId: user.id,
