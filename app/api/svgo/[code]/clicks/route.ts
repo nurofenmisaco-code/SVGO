@@ -76,23 +76,34 @@ export async function GET(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Separate today's clicks from graph data
     const todayRecord = link.dailyClicks.find((dc) => isSameDay(dc.date, today));
     const todayClicks = todayRecord?.clicks ?? 0;
 
-    const graphData = link.dailyClicks.filter((dc) => !isSameDay(dc.date, today));
-    const totalClicksGraph = graphData.reduce((sum, dc) => sum + dc.clicks, 0);
+    // Build clicks-by-date map
+    const clicksByDate = new Map<string, number>();
+    for (const dc of link.dailyClicks) {
+      const key = format(dc.date, 'yyyy-MM-dd');
+      clicksByDate.set(key, dc.clicks);
+    }
 
-    // Format daily stats for graph (excluding today)
-    const dailyStats = graphData.map((dc) => ({
-      date: format(dc.date, 'yyyy-MM-dd'),
-      dateLabel: format(dc.date, 'MMM d'),
-      clicks: dc.clicks,
-    }));
+    // Fill all days in range (including today) so chart shows full 7/30 days
+    const dailyStats: { date: string; dateLabel: string; clicks: number }[] = [];
+    for (let i = 0; i < range; i++) {
+      const d = subDays(today, range - 1 - i);
+      const key = format(d, 'yyyy-MM-dd');
+      const clicks = clicksByDate.get(key) ?? 0;
+      dailyStats.push({
+        date: key,
+        dateLabel: i === range - 1 ? 'Today' : format(d, 'MMM d'),
+        clicks,
+      });
+    }
+
+    const totalClicks = link.dailyClicks.reduce((sum, dc) => sum + dc.clicks, 0);
 
     return NextResponse.json({
       code,
-      totalClicks: totalClicksGraph + todayClicks,
+      totalClicks,
       range,
       dailyStats,
       todayClicks,
