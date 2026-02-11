@@ -16,6 +16,14 @@ function isMobile(userAgent: string | null): boolean {
   return mobileRegex.test(userAgent);
 }
 
+/** Escape URL for safe use in HTML attribute (e.g. meta refresh content). Prevents & and " from breaking the page. */
+function escapeUrlForHtml(url: string): string {
+  return url
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
+}
+
 /** Deep link is only valid if it points to a real product path (/dp/ASIN or /gp/product/ASIN). Links created from amzn.to that didn't resolve get path like /3ZiwVUG and break on mobile. */
 function isValidAmazonDeepLink(appDeeplinkUrl: string | null): boolean {
   if (!appDeeplinkUrl || !appDeeplinkUrl.startsWith('com.amazon.mobile.shopping.web://')) return false;
@@ -101,28 +109,31 @@ export default async function RedirectPage({ params }: PageProps) {
   }
 
   // Mobile: use app deep link only when it's valid (e.g. /dp/ASIN). Manual links created with amzn.to that didn't resolve have bad paths like /3ZiwVUG and cause a blank page; use fallback so they open in browser.
-  const fallbackUrl = link.fallbackUrl;
+  const fallbackUrl = link.fallbackUrl || link.resolvedUrl || link.originalUrl;
   const hasValidAppDeepLink =
     link.appDeeplinkUrl &&
-    link.appDeeplinkUrl !== link.fallbackUrl &&
+    link.appDeeplinkUrl !== fallbackUrl &&
     isValidAmazonDeepLink(link.appDeeplinkUrl);
-  const redirectUrl = hasValidAppDeepLink ? (link.appDeeplinkUrl ?? fallbackUrl) : fallbackUrl;
+  let redirectUrl = hasValidAppDeepLink ? (link.appDeeplinkUrl ?? fallbackUrl) : fallbackUrl;
+  if (!redirectUrl || (typeof redirectUrl === 'string' && !/^(https?:\/\/|com\.amazon\.)/.test(redirectUrl))) {
+    redirectUrl = fallbackUrl;
+  }
+  const safeForMeta = escapeUrlForHtml(redirectUrl);
   return (
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Redirecting...</title>
-        <meta httpEquiv="refresh" content={`0;url=${redirectUrl}`} />
+        <meta httpEquiv="refresh" content={`0;url=${safeForMeta}`} />
       </head>
-      <body>
+      <body style={{ margin: 0, padding: 16, fontFamily: 'sans-serif', fontSize: 16 }}>
         <script dangerouslySetInnerHTML={{
-          __html: `window.location.replace(${JSON.stringify(redirectUrl)});`
+          __html: `try { window.location.replace(${JSON.stringify(redirectUrl)}); } catch (e) { }`
         }} />
-        <noscript>
-          <meta httpEquiv="refresh" content={`0;url=${redirectUrl}`} />
-          <p>Redirecting... <a href={redirectUrl}>Tap here</a></p>
-        </noscript>
+        <p style={{ marginTop: 24 }}>
+          <a href={redirectUrl} style={{ color: '#0066c0' }}>Tap here if you are not redirected</a>
+        </p>
       </body>
     </html>
   );
