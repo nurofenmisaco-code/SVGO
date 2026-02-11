@@ -16,6 +16,21 @@ function isMobile(userAgent: string | null): boolean {
   return mobileRegex.test(userAgent);
 }
 
+/** Deep link is only valid if it points to a real product path (/dp/ASIN or /gp/product/ASIN). Links created from amzn.to that didn't resolve get path like /3ZiwVUG and break on mobile. */
+function isValidAmazonDeepLink(appDeeplinkUrl: string | null): boolean {
+  if (!appDeeplinkUrl || !appDeeplinkUrl.startsWith('com.amazon.mobile.shopping.web://')) return false;
+  try {
+    const pathPart = appDeeplinkUrl.replace(/^com\.amazon\.mobile\.shopping\.web:\/\/amazon\.com/, '') || '/';
+    const path = pathPart.split('?')[0];
+    // Valid: /dp/B0CNCL35CH, /gp/product/B0xxx, /product/B0xxx
+    return /^\/dp\/[A-Z0-9]{10}(\/|$)/.test(path) ||
+           /^\/gp\/product\/[A-Z0-9]{10}(\/|$)/.test(path) ||
+           /^\/product\/[A-Z0-9]{10}(\/|$)/.test(path);
+  } catch {
+    return false;
+  }
+}
+
 async function trackClick(linkId: string) {
   const today = startOfDay(new Date());
 
@@ -85,11 +100,13 @@ export default async function RedirectPage({ params }: PageProps) {
     );
   }
 
-  // Mobile: redirect directly to app deep link when available (client requirement: no interstitial, open in app without user decision).
+  // Mobile: use app deep link only when it's valid (e.g. /dp/ASIN). Manual links created with amzn.to that didn't resolve have bad paths like /3ZiwVUG and cause a blank page; use fallback so they open in browser.
   const fallbackUrl = link.fallbackUrl;
-  const hasAppDeepLink = link.appDeeplinkUrl && link.appDeeplinkUrl !== link.fallbackUrl;
-  const appDeeplinkUrl = link.appDeeplinkUrl || fallbackUrl;
-  const redirectUrl = hasAppDeepLink ? appDeeplinkUrl : fallbackUrl;
+  const hasValidAppDeepLink =
+    link.appDeeplinkUrl &&
+    link.appDeeplinkUrl !== link.fallbackUrl &&
+    isValidAmazonDeepLink(link.appDeeplinkUrl);
+  const redirectUrl = hasValidAppDeepLink ? (link.appDeeplinkUrl ?? fallbackUrl) : fallbackUrl;
   return (
     <html lang="en">
       <head>
