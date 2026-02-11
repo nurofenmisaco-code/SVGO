@@ -85,15 +85,11 @@ export default async function RedirectPage({ params }: PageProps) {
     );
   }
 
-  const appDeeplinkUrl = link.appDeeplinkUrl || link.fallbackUrl;
+  // Mobile: redirect directly to app deep link when available (client requirement: no interstitial, open in app without user decision).
   const fallbackUrl = link.fallbackUrl;
   const hasAppDeepLink = link.appDeeplinkUrl && link.appDeeplinkUrl !== link.fallbackUrl;
-
-  // Mobile: redirect directly to app (no interstitial page per client requirement).
-  // Use app deep link when available so the link opens in Amazon app without user decision.
-  // For in-app browsers (TikTok, etc.): still try app deep link first; OS may hand off to app.
+  const appDeeplinkUrl = link.appDeeplinkUrl || fallbackUrl;
   const redirectUrl = hasAppDeepLink ? appDeeplinkUrl : fallbackUrl;
-
   return (
     <html lang="en">
       <head>
