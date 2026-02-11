@@ -24,13 +24,12 @@ function escapeUrlForHtml(url: string): string {
     .replace(/</g, '&lt;');
 }
 
-/** Deep link is only valid if it points to a real product path (/dp/ASIN or /gp/product/ASIN). Links created from amzn.to that didn't resolve get path like /3ZiwVUG and break on mobile. */
+/** Deep link is only valid if it points to a real product path (/dp/ASIN or /gp/product/ASIN). */
 function isValidAmazonDeepLink(appDeeplinkUrl: string | null): boolean {
   if (!appDeeplinkUrl || !appDeeplinkUrl.startsWith('com.amazon.mobile.shopping.web://')) return false;
   try {
     const pathPart = appDeeplinkUrl.replace(/^com\.amazon\.mobile\.shopping\.web:\/\/amazon\.com/, '') || '/';
     const path = pathPart.split('?')[0];
-    // Valid: /dp/B0CNCL35CH, /gp/product/B0xxx, /product/B0xxx
     return /^\/dp\/[A-Z0-9]{10}(\/|$)/.test(path) ||
            /^\/gp\/product\/[A-Z0-9]{10}(\/|$)/.test(path) ||
            /^\/product\/[A-Z0-9]{10}(\/|$)/.test(path);
@@ -108,31 +107,43 @@ export default async function RedirectPage({ params }: PageProps) {
     );
   }
 
-  // Mobile: use app deep link only when it's valid (e.g. /dp/ASIN). Manual links created with amzn.to that didn't resolve have bad paths like /3ZiwVUG and cause a blank page; use fallback so they open in browser.
+  // Mobile: match client requirement — open in Amazon app without user decision. Try app deep link first; if app doesn't open, fall back to product page in browser after short delay so user never stays on a blank page.
   const fallbackUrl = link.fallbackUrl || link.resolvedUrl || link.originalUrl;
   const hasValidAppDeepLink =
+    link.platform === 'amazon' &&
     link.appDeeplinkUrl &&
     link.appDeeplinkUrl !== fallbackUrl &&
     isValidAmazonDeepLink(link.appDeeplinkUrl);
-  let redirectUrl = hasValidAppDeepLink ? (link.appDeeplinkUrl ?? fallbackUrl) : fallbackUrl;
-  if (!redirectUrl || (typeof redirectUrl === 'string' && !/^(https?:\/\/|com\.amazon\.)/.test(redirectUrl))) {
-    redirectUrl = fallbackUrl;
-  }
-  const safeForMeta = escapeUrlForHtml(redirectUrl);
+  const appDeepLink = hasValidAppDeepLink ? link.appDeeplinkUrl! : null;
+  const finalFallback = fallbackUrl && /^https?:\/\//.test(fallbackUrl) ? fallbackUrl : link.originalUrl || '';
+
+  // Try app first (no interstitial, no user choice). After 2.5s redirect to HTTPS so if app didn't open they see the product in browser.
+  const safeFallbackForMeta = escapeUrlForHtml(finalFallback);
   return (
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Redirecting...</title>
-        <meta httpEquiv="refresh" content={`0;url=${safeForMeta}`} />
+        <title>Opening...</title>
+        {!appDeepLink && <meta httpEquiv="refresh" content={`0;url=${safeFallbackForMeta}`} />}
       </head>
       <body style={{ margin: 0, padding: 16, fontFamily: 'sans-serif', fontSize: 16 }}>
-        <script dangerouslySetInnerHTML={{
-          __html: `try { window.location.replace(${JSON.stringify(redirectUrl)}); } catch (e) { }`
-        }} />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              var appLink = ${appDeepLink ? JSON.stringify(appDeepLink) : 'null'};
+              var webLink = ${JSON.stringify(finalFallback)};
+              if (appLink) {
+                try { window.location.replace(appLink); } catch (e) { }
+                setTimeout(function() { try { window.location.replace(webLink); } catch (e) { } }, 2500);
+              } else if (webLink) {
+                window.location.replace(webLink);
+              }
+            `,
+          }}
+        />
         <p style={{ marginTop: 24 }}>
-          <a href={redirectUrl} style={{ color: '#0066c0' }}>Tap here if you are not redirected</a>
+          <a href={finalFallback} style={{ color: '#0066c0' }}>Tap here if you are not redirected</a>
         </p>
       </body>
     </html>
