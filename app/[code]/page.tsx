@@ -75,7 +75,19 @@ export default async function RedirectPage({ params }: PageProps) {
   });
 
   if (!link || !link.isActive) {
-    redirect('/');
+    return (
+      <html lang="en">
+        <head>
+          <meta charSet="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>Link not found</title>
+        </head>
+        <body style={{ margin: 0, padding: 16, fontFamily: 'sans-serif', fontSize: 16 }}>
+          <h1 style={{ fontSize: 20, fontWeight: 600 }}>Link not found</h1>
+          <p style={{ color: '#666' }}>This short link doesn&apos;t exist or has expired.</p>
+        </body>
+      </html>
+    );
   }
 
   // Track click
