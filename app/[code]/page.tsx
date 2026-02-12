@@ -16,6 +16,18 @@ function isMobile(userAgent: string | null): boolean {
   return mobileRegex.test(userAgent);
 }
 
+function isAndroid(userAgent: string | null): boolean {
+  return !!userAgent && /Android/i.test(userAgent);
+}
+
+/** Build Android intent URL so WebViews (TikTok, YouTube, Pinterest) can hand off to the Amazon app. Falls back to browser if app not installed. */
+function buildAmazonIntentUrl(deepLink: string, fallbackUrl: string): string {
+  const match = deepLink.match(/^com\.amazon\.mobile\.shopping\.web:\/\/(.+)$/);
+  const pathAndQuery = match ? match[1] : '';
+  const encodedFallback = encodeURIComponent(fallbackUrl);
+  return `intent://${pathAndQuery}#Intent;scheme=com.amazon.mobile.shopping.web;package=com.amazon.mShop.android.shopping;S.browser_fallback_url=${encodedFallback};end`;
+}
+
 /** Escape URL for safe use in HTML attribute (e.g. meta refresh content). Prevents & and " from breaking the page. */
 function escapeUrlForHtml(url: string): string {
   return url
@@ -107,17 +119,21 @@ export default async function RedirectPage({ params }: PageProps) {
     );
   }
 
-  // Mobile: match client requirement — open in Amazon app without user decision. Try app deep link first; if app doesn't open, fall back to product page in browser after short delay so user never stays on a blank page.
+  // Mobile: match client requirement — open in Amazon app (TikTok/YouTube/Pinterest WebViews). On Android use intent:// so in-app WebViews can hand off to the Amazon app; on iOS use custom scheme. Fall back to product page in browser after 2.5s if app doesn't open.
   const fallbackUrl = link.fallbackUrl || link.resolvedUrl || link.originalUrl;
   const hasValidAppDeepLink =
     link.platform === 'amazon' &&
     link.appDeeplinkUrl &&
     link.appDeeplinkUrl !== fallbackUrl &&
     isValidAmazonDeepLink(link.appDeeplinkUrl);
-  const appDeepLink = hasValidAppDeepLink ? link.appDeeplinkUrl! : null;
+  const rawAppDeepLink = hasValidAppDeepLink ? link.appDeeplinkUrl! : null;
   const finalFallback = fallbackUrl && /^https?:\/\//.test(fallbackUrl) ? fallbackUrl : link.originalUrl || '';
+  // Android: intent URL works better in WebViews (TikTok, YouTube, etc.). iOS: use custom scheme.
+  const appDeepLink =
+    rawAppDeepLink && isAndroid(userAgent)
+      ? buildAmazonIntentUrl(rawAppDeepLink, finalFallback)
+      : rawAppDeepLink;
 
-  // Try app first (no interstitial, no user choice). After 2.5s redirect to HTTPS so if app didn't open they see the product in browser.
   const safeFallbackForMeta = escapeUrlForHtml(finalFallback);
   return (
     <html lang="en">
