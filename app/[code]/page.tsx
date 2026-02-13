@@ -147,29 +147,52 @@ export default async function RedirectPage({ params }: PageProps) {
       : rawAppDeepLink;
 
   const safeFallbackForMeta = escapeUrlForHtml(finalFallback);
+
+  // Mobile + Amazon app: show interstitial so app open is triggered by user gesture.
+  // In-app WebViews (TikTok, YouTube) block intent/scheme navigation unless it's from a user tap.
+  // linktw.in uses the same pattern: "This site is trying to open another application" → Allow / Don't allow.
+  if (appDeepLink) {
+    return (
+      <html lang="en">
+        <head>
+          <meta charSet="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>Open in Amazon app</title>
+        </head>
+        <body style={{ margin: 0, padding: 24, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', fontSize: 16, background: '#f5f5f5', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: 24, maxWidth: 360, width: '100%', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+            <p style={{ margin: '0 0 24px', color: '#333', textAlign: 'center', lineHeight: 1.5 }}>
+              This site is trying to open another application.
+            </p>
+            <a
+              href={appDeepLink}
+              style={{ display: 'block', width: '100%', padding: '14px 20px', marginBottom: 12, background: '#ff9900', color: '#000', fontWeight: 600, textAlign: 'center', borderRadius: 8, textDecoration: 'none', boxSizing: 'border-box' }}
+            >
+              Open in Amazon app
+            </a>
+            <a
+              href={finalFallback}
+              style={{ display: 'block', width: '100%', padding: '14px 20px', background: '#e5e5e5', color: '#333', fontWeight: 500, textAlign: 'center', borderRadius: 8, textDecoration: 'none', boxSizing: 'border-box' }}
+            >
+              Continue in browser
+            </a>
+          </div>
+          <p style={{ marginTop: 24, fontSize: 12, color: '#999' }}>Powered by svgo.to</p>
+        </body>
+      </html>
+    );
+  }
+
+  // Mobile but no app deep link (e.g. non-Amazon): redirect to web URL
   return (
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Opening...</title>
-        {!appDeepLink && <meta httpEquiv="refresh" content={`0;url=${safeFallbackForMeta}`} />}
+        <meta httpEquiv="refresh" content={`0;url=${safeFallbackForMeta}`} />
       </head>
       <body style={{ margin: 0, padding: 16, fontFamily: 'sans-serif', fontSize: 16 }}>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              var appLink = ${appDeepLink ? JSON.stringify(appDeepLink) : 'null'};
-              var webLink = ${JSON.stringify(finalFallback)};
-              if (appLink) {
-                try { window.location.replace(appLink); } catch (e) { }
-                setTimeout(function() { try { window.location.replace(webLink); } catch (e) { } }, 2500);
-              } else if (webLink) {
-                window.location.replace(webLink);
-              }
-            `,
-          }}
-        />
         <p style={{ marginTop: 24 }}>
           <a href={finalFallback} style={{ color: '#0066c0' }}>Tap here if you are not redirected</a>
         </p>
