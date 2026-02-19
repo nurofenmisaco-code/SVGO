@@ -10,6 +10,22 @@ function isAmazonShortUrl(url: string): boolean {
   }
 }
 
+/** Other shorteners (urlgeni, linktw.in, etc.) that redirect to Amazon; resolve so SVGO link points to Amazon, not the shortener. */
+function isThirdPartyShortener(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return (
+      host.includes('urlgeni.us') ||
+      host.includes('urlgeni.com') ||
+      host.includes('linktw.in') ||
+      host === 'bit.ly' ||
+      host === 't.co'
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function resolveUrl(url: string): Promise<string> {
   // Skip URL resolution for Walmart - they have aggressive bot detection
   // that blocks automated requests and returns blocked pages
@@ -19,8 +35,9 @@ export async function resolveUrl(url: string): Promise<string> {
     return url;
   }
 
-  // amzn.to / amzn.com only redirect on GET; HEAD often returns 200 with no Location. Use GET + follow.
-  if (isAmazonShortUrl(url)) {
+  // Shorteners (amzn.to, urlgeni, linktw.in, etc.) often only redirect on GET. Use GET + follow so we store final Amazon URL — feed then goes svgo → Amazon (not svgo → urlgeni → app).
+  const useGetFollow = isAmazonShortUrl(url) || isThirdPartyShortener(url);
+  if (useGetFollow) {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);

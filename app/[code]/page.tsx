@@ -60,15 +60,24 @@ function isAmazonShortUrl(url: string | null): boolean {
   }
 }
 
-/** Deep link is only valid if it points to a real product path (/dp/ASIN or /gp/product/ASIN). */
+/** Third-party shorteners (urlgeni, linktw.in) that redirect to Amazon; resolve at redirect so we show SVGO interstitial, not send user to urlgeni. */
+function isThirdPartyShortener(url: string | null): boolean {
+  if (!url || !/^https?:\/\//.test(url)) return false;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host.includes('urlgeni.us') || host.includes('urlgeni.com') || host.includes('linktw.in') || host === 'bit.ly' || host === 't.co';
+  } catch {
+    return false;
+  }
+}
+
+/** Deep link is only valid if it points to a real product path (contains /dp/ASIN or /gp/product/ASIN). */
 function isValidAmazonDeepLink(appDeeplinkUrl: string | null): boolean {
   if (!appDeeplinkUrl || !appDeeplinkUrl.startsWith('com.amazon.mobile.shopping.web://')) return false;
   try {
     const pathPart = appDeeplinkUrl.replace(/^com\.amazon\.mobile\.shopping\.web:\/\/amazon\.com/, '') || '/';
     const path = pathPart.split('?')[0];
-    return /^\/dp\/[A-Z0-9]{10}(\/|$)/.test(path) ||
-           /^\/gp\/product\/[A-Z0-9]{10}(\/|$)/.test(path) ||
-           /^\/product\/[A-Z0-9]{10}(\/|$)/.test(path);
+    return /\/(?:dp|gp\/product|product)\/[A-Z0-9]{10}(\/|$)/.test(path);
   } catch {
     return false;
   }
@@ -178,6 +187,7 @@ export default async function RedirectPage({ params }: PageProps) {
       ? link.appDeeplinkUrl
       : null;
   let generatedDeepLink: string | null = null;
+  let resolvedFallbackUrl: string | null = null; // When we resolve a shortener at redirect time, use this for "Continue in browser" so user goes to Amazon, not urlgeni.
   if (isAmazonLink) {
     for (const u of urlsToTry) {
       const candidate = generateDeepLink('amazon', u);
@@ -186,24 +196,29 @@ export default async function RedirectPage({ params }: PageProps) {
         break;
       }
     }
-    // amzn.to only redirects on GET; resolve at redirect time and build deep link from final URL.
+    // Shorteners (amzn.to, urlgeni, linktw.in): resolve at redirect time and build deep link from final URL so user sees SVGO interstitial, not sent to urlgeni.
     if (!generatedDeepLink) {
-      const shortUrl = urlsToTry.find(isAmazonShortUrl);
+      const shortUrl = urlsToTry.find((u) => isAmazonShortUrl(u) || isThirdPartyShortener(u));
       if (shortUrl) {
         try {
           const resolved = await resolveUrl(shortUrl);
           if (resolved && resolved !== shortUrl) {
+            resolvedFallbackUrl = resolved;
             const candidate = generateDeepLink('amazon', resolved);
             if (candidate && isValidAmazonDeepLink(candidate)) generatedDeepLink = candidate;
           }
         } catch (e) {
-          console.warn('[SVGO Redirect] Resolve amzn.to at redirect time failed:', e);
+          console.warn('[SVGO Redirect] Resolve short URL at redirect time failed:', e);
         }
       }
     }
   }
   const rawAppDeepLink = storedDeepLink ?? generatedDeepLink;
-  const finalFallback = fallbackUrl && /^https?:\/\//.test(fallbackUrl) ? fallbackUrl : link.originalUrl || '';
+  const finalFallback =
+    (resolvedFallbackUrl && /^https?:\/\//.test(resolvedFallbackUrl) ? resolvedFallbackUrl : null) ||
+    (fallbackUrl && /^https?:\/\//.test(fallbackUrl) ? fallbackUrl : null) ||
+    link.originalUrl ||
+    '';
   // Android: intent URL works better in WebViews (TikTok, YouTube, etc.). iOS: use custom scheme.
   const appDeepLink =
     rawAppDeepLink && isAndroid(userAgent)
