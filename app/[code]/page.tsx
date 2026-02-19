@@ -146,17 +146,25 @@ export default async function RedirectPage({ params }: PageProps) {
 
   // Mobile: match client requirement — open in Amazon app (TikTok/YouTube/Pinterest WebViews). On Android use intent:// so in-app WebViews can hand off to the Amazon app; on iOS use custom scheme. Fall back to product page in browser after 2.5s if app doesn't open.
   const fallbackUrl = link.fallbackUrl || link.resolvedUrl || link.originalUrl;
-  // Use stored appDeeplinkUrl when present; otherwise generate from fallback URL so old links (created before deep linking) still show the "Open in Amazon app" interstitial.
+  // Use stored appDeeplinkUrl when present; otherwise generate from stored URLs so old links (or links with amzn.to stored) still show the interstitial. Try fallbackUrl, resolvedUrl, originalUrl — client links sometimes have only one as full amazon.com/dp/... URL.
   const storedDeepLink =
     link.platform === 'amazon' && link.appDeeplinkUrl && isValidAmazonDeepLink(link.appDeeplinkUrl)
       ? link.appDeeplinkUrl
       : null;
-  const generatedDeepLink =
-    link.platform === 'amazon' && fallbackUrl && /^https?:\/\//.test(fallbackUrl)
-      ? generateDeepLink('amazon', fallbackUrl)
-      : null;
-  const rawAppDeepLink =
-    storedDeepLink ?? (generatedDeepLink && isValidAmazonDeepLink(generatedDeepLink) ? generatedDeepLink : null);
+  let generatedDeepLink: string | null = null;
+  if (link.platform === 'amazon') {
+    const urlsToTry = [link.fallbackUrl, link.resolvedUrl, link.originalUrl].filter(
+      (u): u is string => !!u && /^https?:\/\//.test(u)
+    );
+    for (const u of urlsToTry) {
+      const candidate = generateDeepLink('amazon', u);
+      if (candidate && isValidAmazonDeepLink(candidate)) {
+        generatedDeepLink = candidate;
+        break;
+      }
+    }
+  }
+  const rawAppDeepLink = storedDeepLink ?? generatedDeepLink;
   const finalFallback = fallbackUrl && /^https?:\/\//.test(fallbackUrl) ? fallbackUrl : link.originalUrl || '';
   // Android: intent URL works better in WebViews (TikTok, YouTube, etc.). iOS: use custom scheme.
   const appDeepLink =
