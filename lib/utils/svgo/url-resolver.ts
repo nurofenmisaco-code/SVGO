@@ -22,15 +22,19 @@ export async function resolveUrl(url: string): Promise<string> {
   // amzn.to / amzn.com only redirect on GET; HEAD often returns 200 with no Location. Use GET + follow.
   if (isAmazonShortUrl(url)) {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
       const response = await fetch(url, {
         method: 'GET',
         redirect: 'follow',
+        signal: controller.signal,
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.5',
         },
       });
+      clearTimeout(timeoutId);
       const finalUrl = response.url && /^https?:\/\//.test(response.url) ? response.url : url;
       if (finalUrl !== url) {
         return finalUrl;

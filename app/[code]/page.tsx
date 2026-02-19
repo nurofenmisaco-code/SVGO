@@ -128,8 +128,21 @@ export default async function RedirectPage({ params }: PageProps) {
                     link.originalUrl.includes('walmart.com') ||
                     link.platform === 'walmart';
 
-  // For desktop non-Walmart: use server-side redirect (fastest)
-  if (!mobile && !isWalmart) {
+  const urlsToTryForAmazon = [link.fallbackUrl, link.resolvedUrl, link.originalUrl].filter(
+    (u): u is string => !!u && /^https?:\/\//.test(u)
+  );
+  const looksLikeAmazonUrl = (u: string) => {
+    try {
+      return /amazon\.com|amzn\.to|amzn\.com/i.test(new URL(u).hostname);
+    } catch {
+      return false;
+    }
+  };
+  const isAmazonLink = link.platform === 'amazon' || urlsToTryForAmazon.some(looksLikeAmazonUrl);
+
+  // For desktop non-Walmart non-Amazon: use server-side redirect (fastest).
+  // For Amazon we always run the interstitial logic so we can resolve amzn.to and show "Open in Amazon app" (desktop users can tap "Continue in browser").
+  if (!mobile && !isWalmart && !isAmazonLink) {
     redirect(link.fallbackUrl);
   }
 
@@ -156,19 +169,9 @@ export default async function RedirectPage({ params }: PageProps) {
     );
   }
 
-  // Mobile: match client requirement — open in Amazon app (TikTok/YouTube/Pinterest WebViews). On Android use intent:// so in-app WebViews can hand off to the Amazon app; on iOS use custom scheme. Fall back to product page in browser after 2.5s if app doesn't open.
+  // Mobile (and Amazon desktop): open in Amazon app when possible; show interstitial so user can choose app vs browser.
   const fallbackUrl = link.fallbackUrl || link.resolvedUrl || link.originalUrl;
-  const urlsToTry = [link.fallbackUrl, link.resolvedUrl, link.originalUrl].filter(
-    (u): u is string => !!u && /^https?:\/\//.test(u)
-  );
-  const looksLikeAmazon = (u: string) => {
-    try {
-      return /amazon\.com|amzn\.to|amzn\.com/i.test(new URL(u).hostname);
-    } catch {
-      return false;
-    }
-  };
-  const isAmazonLink = link.platform === 'amazon' || urlsToTry.some(looksLikeAmazon);
+  const urlsToTry = urlsToTryForAmazon;
   // Use stored appDeeplinkUrl when present; otherwise generate from stored URLs so old links (or links with amzn.to stored) still show the interstitial.
   const storedDeepLink =
     isAmazonLink && link.appDeeplinkUrl && isValidAmazonDeepLink(link.appDeeplinkUrl)
