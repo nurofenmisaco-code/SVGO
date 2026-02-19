@@ -1,5 +1,6 @@
 // app/[code]/page.tsx - Redirect handler with mobile app deep linking
 
+import { randomUUID } from 'crypto';
 import { prisma } from '@/lib/prisma';
 import type { Prisma } from '@prisma/client';
 import { redirect } from 'next/navigation';
@@ -227,6 +228,14 @@ export default async function RedirectPage({ params }: PageProps) {
 
   const safeFallbackForMeta = escapeUrlForHtml(finalFallback);
 
+  // Escape links: open this same svgo.to page in the system browser so "Open in Amazon app" works (TikTok/Instagram in-app browser blocks it). See https://paul.af/escape-in-app-browsers
+  const host = headersList.get('x-forwarded-host') || headersList.get('host') || '';
+  const baseUrl = host ? `https://${host.replace(/^https?:\/\//, '').split(',')[0].trim()}` : (process.env.NEXT_PUBLIC_APP_URL || 'https://svgo.to');
+  const currentPageUrl = `${baseUrl}/${code}`;
+  const escapeLinkAndroid = `intent:${currentPageUrl}#Intent;end`;
+  const escapeLinkIos = `shortcuts://x-callback-url/run-shortcut?name=${randomUUID()}&x-error=${encodeURIComponent(currentPageUrl)}`;
+  const isIos = !!userAgent && /iPhone|iPad|iPod/i.test(userAgent);
+
   // Mobile + Amazon app: show interstitial so app open is triggered by user gesture.
   // In-app WebViews (TikTok, YouTube) block intent/scheme navigation unless it's from a user tap.
   // linktw.in uses the same pattern: "This site is trying to open another application" → Allow / Don't allow.
@@ -250,11 +259,20 @@ export default async function RedirectPage({ params }: PageProps) {
               Open in Amazon app
             </a>
             <a
+              href={isIos ? escapeLinkIos : escapeLinkAndroid}
+              style={{ display: 'block', width: '100%', padding: '14px 20px', marginBottom: 12, background: '#e8f4fc', color: '#0066c0', fontWeight: 500, textAlign: 'center', borderRadius: 8, textDecoration: 'none', boxSizing: 'border-box', border: '1px solid #b3d9f2' }}
+            >
+              {isIos ? 'Open in Safari (then tap “Open in Amazon app”)' : 'Open in Chrome (then tap “Open in Amazon app”)'}
+            </a>
+            <a
               href={finalFallback}
               style={{ display: 'block', width: '100%', padding: '14px 20px', background: '#e5e5e5', color: '#333', fontWeight: 500, textAlign: 'center', borderRadius: 8, textDecoration: 'none', boxSizing: 'border-box' }}
             >
               Continue in browser
             </a>
+            <p style={{ marginTop: 16, fontSize: 12, color: '#666', textAlign: 'center', lineHeight: 1.4 }}>
+              In TikTok or Instagram? &quot;Open in Amazon app&quot; often doesn&apos;t work there. Use the blue button above to open this page in Safari/Chrome, then tap &quot;Open in Amazon app&quot;.
+            </p>
           </div>
           <p style={{ marginTop: 24, fontSize: 12, color: '#999' }}>Powered by svgo.to</p>
         </body>
