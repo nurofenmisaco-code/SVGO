@@ -5,6 +5,7 @@ import type { Prisma } from '@prisma/client';
 import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { startOfDay } from 'date-fns';
+import { generateDeepLink } from '@/lib/utils/svgo/deep-link-generator';
 
 interface PageProps {
   params: Promise<{ code: string }>;
@@ -14,6 +15,17 @@ function isMobile(userAgent: string | null): boolean {
   if (!userAgent) return false;
   const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
   return mobileRegex.test(userAgent);
+}
+
+/** In-app browsers (TikTok, Instagram) sometimes send a desktop User-Agent. Treat as mobile so we show the "Open in Amazon app" interstitial instead of redirecting straight to the URL. */
+function isLikelyInAppWebView(referer: string | null): boolean {
+  if (!referer) return false;
+  try {
+    const host = new URL(referer).hostname.toLowerCase();
+    return host.includes('tiktok.com') || host.includes('instagram.com') || host.includes('facebook.com') || host.includes('pinterest.com');
+  } catch {
+    return false;
+  }
 }
 
 function isAndroid(userAgent: string | null): boolean {
@@ -93,10 +105,11 @@ export default async function RedirectPage({ params }: PageProps) {
   // Track click
   await trackClick(link.id);
 
-  // Check if mobile
+  // Check if mobile (or in-app WebView: TikTok/Instagram often send desktop UA but we still want the interstitial)
   const headersList = await headers();
   const userAgent = headersList.get('user-agent');
-  const mobile = isMobile(userAgent);
+  const referer = headersList.get('referer') || headersList.get('referrer');
+  const mobile = isMobile(userAgent) || isLikelyInAppWebView(referer);
 
   // Check if this is a Walmart URL - they block server-side redirects
   const isWalmart = link.fallbackUrl.includes('walmart.com') || 
@@ -133,12 +146,17 @@ export default async function RedirectPage({ params }: PageProps) {
 
   // Mobile: match client requirement — open in Amazon app (TikTok/YouTube/Pinterest WebViews). On Android use intent:// so in-app WebViews can hand off to the Amazon app; on iOS use custom scheme. Fall back to product page in browser after 2.5s if app doesn't open.
   const fallbackUrl = link.fallbackUrl || link.resolvedUrl || link.originalUrl;
-  const hasValidAppDeepLink =
-    link.platform === 'amazon' &&
-    link.appDeeplinkUrl &&
-    link.appDeeplinkUrl !== fallbackUrl &&
-    isValidAmazonDeepLink(link.appDeeplinkUrl);
-  const rawAppDeepLink = hasValidAppDeepLink ? link.appDeeplinkUrl! : null;
+  // Use stored appDeeplinkUrl when present; otherwise generate from fallback URL so old links (created before deep linking) still show the "Open in Amazon app" interstitial.
+  const storedDeepLink =
+    link.platform === 'amazon' && link.appDeeplinkUrl && isValidAmazonDeepLink(link.appDeeplinkUrl)
+      ? link.appDeeplinkUrl
+      : null;
+  const generatedDeepLink =
+    link.platform === 'amazon' && fallbackUrl && /^https?:\/\//.test(fallbackUrl)
+      ? generateDeepLink('amazon', fallbackUrl)
+      : null;
+  const rawAppDeepLink =
+    storedDeepLink ?? (generatedDeepLink && isValidAmazonDeepLink(generatedDeepLink) ? generatedDeepLink : null);
   const finalFallback = fallbackUrl && /^https?:\/\//.test(fallbackUrl) ? fallbackUrl : link.originalUrl || '';
   // Android: intent URL works better in WebViews (TikTok, YouTube, etc.). iOS: use custom scheme.
   const appDeepLink =
