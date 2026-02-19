@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { startOfDay } from 'date-fns';
 import { generateDeepLink } from '@/lib/utils/svgo/deep-link-generator';
+import { resolveUrl } from '@/lib/utils/svgo/url-resolver';
 
 interface PageProps {
   params: Promise<{ code: string }>;
@@ -46,6 +47,17 @@ function escapeUrlForHtml(url: string): string {
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;');
+}
+
+/** True if URL is an Amazon short link (amzn.to, amzn.com) that redirects to the full product page. */
+function isAmazonShortUrl(url: string | null): boolean {
+  if (!url || !/^https?:\/\//.test(url)) return false;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === 'amzn.to' || host === 'amzn.com' || host.endsWith('.amzn.to') || host.endsWith('.amzn.com');
+  } catch {
+    return false;
+  }
 }
 
 /** Deep link is only valid if it points to a real product path (/dp/ASIN or /gp/product/ASIN). */
@@ -161,6 +173,21 @@ export default async function RedirectPage({ params }: PageProps) {
       if (candidate && isValidAmazonDeepLink(candidate)) {
         generatedDeepLink = candidate;
         break;
+      }
+    }
+    // Client may have created the link with amzn.to/... — stored URLs then only have the short form, so no valid /dp/ path. Resolve at redirect time and build deep link from final URL.
+    if (!generatedDeepLink) {
+      const shortUrl = urlsToTry.find(isAmazonShortUrl);
+      if (shortUrl) {
+        try {
+          const resolved = await resolveUrl(shortUrl);
+          if (resolved && resolved !== shortUrl) {
+            const candidate = generateDeepLink('amazon', resolved);
+            if (candidate && isValidAmazonDeepLink(candidate)) generatedDeepLink = candidate;
+          }
+        } catch (e) {
+          console.warn('[SVGO Redirect] Resolve amzn.to at redirect time failed:', e);
+        }
       }
     }
   }
