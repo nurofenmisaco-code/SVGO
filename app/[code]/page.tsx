@@ -158,16 +158,24 @@ export default async function RedirectPage({ params }: PageProps) {
 
   // Mobile: match client requirement — open in Amazon app (TikTok/YouTube/Pinterest WebViews). On Android use intent:// so in-app WebViews can hand off to the Amazon app; on iOS use custom scheme. Fall back to product page in browser after 2.5s if app doesn't open.
   const fallbackUrl = link.fallbackUrl || link.resolvedUrl || link.originalUrl;
-  // Use stored appDeeplinkUrl when present; otherwise generate from stored URLs so old links (or links with amzn.to stored) still show the interstitial. Try fallbackUrl, resolvedUrl, originalUrl — client links sometimes have only one as full amazon.com/dp/... URL.
+  const urlsToTry = [link.fallbackUrl, link.resolvedUrl, link.originalUrl].filter(
+    (u): u is string => !!u && /^https?:\/\//.test(u)
+  );
+  const looksLikeAmazon = (u: string) => {
+    try {
+      return /amazon\.com|amzn\.to|amzn\.com/i.test(new URL(u).hostname);
+    } catch {
+      return false;
+    }
+  };
+  const isAmazonLink = link.platform === 'amazon' || urlsToTry.some(looksLikeAmazon);
+  // Use stored appDeeplinkUrl when present; otherwise generate from stored URLs so old links (or links with amzn.to stored) still show the interstitial.
   const storedDeepLink =
-    link.platform === 'amazon' && link.appDeeplinkUrl && isValidAmazonDeepLink(link.appDeeplinkUrl)
+    isAmazonLink && link.appDeeplinkUrl && isValidAmazonDeepLink(link.appDeeplinkUrl)
       ? link.appDeeplinkUrl
       : null;
   let generatedDeepLink: string | null = null;
-  if (link.platform === 'amazon') {
-    const urlsToTry = [link.fallbackUrl, link.resolvedUrl, link.originalUrl].filter(
-      (u): u is string => !!u && /^https?:\/\//.test(u)
-    );
+  if (isAmazonLink) {
     for (const u of urlsToTry) {
       const candidate = generateDeepLink('amazon', u);
       if (candidate && isValidAmazonDeepLink(candidate)) {
@@ -175,7 +183,7 @@ export default async function RedirectPage({ params }: PageProps) {
         break;
       }
     }
-    // Client may have created the link with amzn.to/... — stored URLs then only have the short form, so no valid /dp/ path. Resolve at redirect time and build deep link from final URL.
+    // amzn.to only redirects on GET; resolve at redirect time and build deep link from final URL.
     if (!generatedDeepLink) {
       const shortUrl = urlsToTry.find(isAmazonShortUrl);
       if (shortUrl) {

@@ -1,11 +1,43 @@
 // lib/utils/svgo/url-resolver.ts
 
+/** Amazon short links (amzn.to, amzn.com) often only redirect on GET, not HEAD. Use GET + follow to get final URL. */
+function isAmazonShortUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === 'amzn.to' || host === 'amzn.com' || host.endsWith('.amzn.to') || host.endsWith('.amzn.com');
+  } catch {
+    return false;
+  }
+}
+
 export async function resolveUrl(url: string): Promise<string> {
   // Skip URL resolution for Walmart - they have aggressive bot detection
   // that blocks automated requests and returns blocked pages
   // Use the original URL directly to avoid bot detection
   if (url.includes('walmart.com')) {
     console.log('[URL Resolver] Skipping resolution for Walmart URL (bot detection)');
+    return url;
+  }
+
+  // amzn.to / amzn.com only redirect on GET; HEAD often returns 200 with no Location. Use GET + follow.
+  if (isAmazonShortUrl(url)) {
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        redirect: 'follow',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+        },
+      });
+      const finalUrl = response.url && /^https?:\/\//.test(response.url) ? response.url : url;
+      if (finalUrl !== url) {
+        return finalUrl;
+      }
+    } catch (e) {
+      console.warn('[URL Resolver] GET follow for amzn short URL failed:', e);
+    }
     return url;
   }
 
