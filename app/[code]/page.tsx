@@ -8,6 +8,7 @@ import { headers } from 'next/headers';
 import { startOfDay } from 'date-fns';
 import { generateDeepLink } from '@/lib/utils/svgo/deep-link-generator';
 import { resolveUrl } from '@/lib/utils/svgo/url-resolver';
+import { getRoutingMode, isHostileBrowser } from '@/lib/utils/svgo/routing';
 
 interface PageProps {
   params: Promise<{ code: string }>;
@@ -124,72 +125,71 @@ export default async function RedirectPage({ params }: PageProps) {
     );
   }
 
-  // Track click
+  // Track click (client doc: record click server-side immediately)
   await trackClick(link.id);
 
-  // Check if mobile (or in-app WebView: TikTok/Instagram often send desktop UA but we still want the interstitial)
   const headersList = await headers();
   const userAgent = headersList.get('user-agent');
   const referer = headersList.get('referer') || headersList.get('referrer');
   const mobile = isMobile(userAgent) || isLikelyInAppWebView(referer);
+  const hostile = isHostileBrowser(userAgent);
 
-  // Check if this is a Walmart URL - they block server-side redirects
-  const isWalmart = link.fallbackUrl.includes('walmart.com') || 
+  // Client doc: routing mode — passthrough = redirect immediately; svgo_deeplink = Amazon + Amazon-owned URL only
+  const routingMode = getRoutingMode({
+    platform: link.platform,
+    originalUrl: link.originalUrl,
+    resolvedUrl: link.resolvedUrl,
+    fallbackUrl: link.fallbackUrl,
+  });
+
+  const redirectUrl = link.resolvedUrl || link.originalUrl || link.fallbackUrl;
+  const isWalmart = link.fallbackUrl.includes('walmart.com') ||
                     link.originalUrl.includes('walmart.com') ||
                     link.platform === 'walmart';
 
-  const urlsToTryForAmazon = [link.fallbackUrl, link.resolvedUrl, link.originalUrl].filter(
-    (u): u is string => !!u && /^https?:\/\//.test(u)
-  );
-  const looksLikeAmazonUrl = (u: string) => {
-    try {
-      return /amazon\.com|amzn\.to|amzn\.com/i.test(new URL(u).hostname);
-    } catch {
-      return false;
-    }
-  };
-  const isAmazonLink = link.platform === 'amazon' || urlsToTryForAmazon.some(looksLikeAmazonUrl);
+  // Passthrough: redirect immediately (mobile and desktop). No interstitial.
+  if (routingMode === 'passthrough') {
+    redirect(redirectUrl);
+  }
 
-  // For desktop non-Walmart non-Amazon: use server-side redirect (fastest).
-  // For Amazon we always run the interstitial logic so we can resolve amzn.to and show "Open in Amazon app" (desktop users can tap "Continue in browser").
-  if (!mobile && !isWalmart && !isAmazonLink) {
+  // Client doc: "Desktop always redirects directly. No interstitial." Exception: Walmart blocks 302 → use JS redirect page.
+  if (!mobile) {
+    if (isWalmart) {
+      return (
+        <html lang="en">
+          <head>
+            <meta charSet="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>Redirecting...</title>
+            <meta httpEquiv="refresh" content={`0;url=${link.fallbackUrl}`} />
+          </head>
+          <body>
+            <script dangerouslySetInnerHTML={{
+              __html: `window.location.replace(${JSON.stringify(link.fallbackUrl)});`
+            }} />
+            <noscript>
+              <meta httpEquiv="refresh" content={`0;url=${link.fallbackUrl}`} />
+              <p>Redirecting... <a href={link.fallbackUrl}>Click here if you are not redirected</a></p>
+            </noscript>
+          </body>
+        </html>
+      );
+    }
     redirect(link.fallbackUrl);
   }
 
-  // For desktop Walmart: minimal page with immediate JavaScript redirect
-  if (!mobile && isWalmart) {
-    return (
-      <html lang="en">
-        <head>
-          <meta charSet="utf-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1" />
-          <title>Redirecting...</title>
-          <meta httpEquiv="refresh" content={`0;url=${link.fallbackUrl}`} />
-        </head>
-        <body>
-          <script dangerouslySetInnerHTML={{
-            __html: `window.location.replace(${JSON.stringify(link.fallbackUrl)});`
-          }} />
-          <noscript>
-            <meta httpEquiv="refresh" content={`0;url=${link.fallbackUrl}`} />
-            <p>Redirecting... <a href={link.fallbackUrl}>Click here if you are not redirected</a></p>
-          </noscript>
-        </body>
-      </html>
-    );
-  }
-
-  // Mobile (and Amazon desktop): open in Amazon app when possible; show interstitial so user can choose app vs browser.
+  // Mobile + svgo_deeplink only: show interstitial (Open in Amazon app / Continue in browser).
   const fallbackUrl = link.fallbackUrl || link.resolvedUrl || link.originalUrl;
-  const urlsToTry = urlsToTryForAmazon;
-  // Use stored appDeeplinkUrl when present; otherwise generate from stored URLs so old links (or links with amzn.to stored) still show the interstitial.
+  const urlsToTry = [link.fallbackUrl, link.resolvedUrl, link.originalUrl].filter(
+    (u): u is string => !!u && typeof u === 'string' && /^https?:\/\//.test(u)
+  );
   const storedDeepLink =
-    isAmazonLink && link.appDeeplinkUrl && isValidAmazonDeepLink(link.appDeeplinkUrl)
+    link.appDeeplinkUrl && isValidAmazonDeepLink(link.appDeeplinkUrl)
       ? link.appDeeplinkUrl
       : null;
   let generatedDeepLink: string | null = null;
   let resolvedFallbackUrl: string | null = null; // When we resolve a shortener at redirect time, use this for "Continue in browser" so user goes to Amazon, not urlgeni.
-  if (isAmazonLink) {
+  if (routingMode === 'svgo_deeplink') {
     for (const u of urlsToTry) {
       const candidate = generateDeepLink('amazon', u);
       if (candidate && isValidAmazonDeepLink(candidate)) {
@@ -270,9 +270,11 @@ export default async function RedirectPage({ params }: PageProps) {
             >
               Continue in browser
             </a>
-            <p style={{ marginTop: 16, fontSize: 12, color: '#666', textAlign: 'center', lineHeight: 1.4 }}>
-              In TikTok or Instagram? &quot;Open in Amazon app&quot; often doesn&apos;t work there. Use the blue button above to open this page in Safari/Chrome, then tap &quot;Open in Amazon app&quot;.
-            </p>
+            {hostile && (
+              <p style={{ marginTop: 16, fontSize: 12, color: '#666', textAlign: 'center', lineHeight: 1.4 }}>
+                If the app doesn&apos;t open, tap ⋯ and choose Open in browser, then tap again.
+              </p>
+            )}
           </div>
           <p style={{ marginTop: 24, fontSize: 12, color: '#999' }}>Powered by svgo.to</p>
         </body>
